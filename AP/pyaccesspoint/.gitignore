@@ -1,0 +1,5 @@
+*.pyc
+/.pypirc
+.idea
+/PyAccessPoint.egg-info
+dist
