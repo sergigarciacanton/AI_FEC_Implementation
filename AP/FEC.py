@@ -108,9 +108,11 @@ def serve_client(sock, ip):
         print("[I] From UE " + str(ip) + ": " + str(data))
         json_data = json.loads(data)
 
-        if json_data['type'] == 'auth':  # Finish setting up connection. Format: '0/{usr_id}'
+        if json_data['type'] == 'auth':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
             try:
-                if valid_ids.index(json_data['user_id']) >= 0:
+                control_socket.send(json.dumps(dict(type="auth", user_id=json_data['user_id'])).encode())
+                control_response = json.loads(control_socket.recv(1024).decode())
+                if control_response['res'] == 200:
                     connections.append(Connection(int(json_data['user_id']),
                                                   sock,
                                                   subprocess.check_output(['arp', '-n', ip]).decode().split('\n')[
@@ -120,7 +122,7 @@ def serve_client(sock, ip):
                     state_changed = True
                     sock.send(json.dumps(dict(res=200)).encode())  # Access granted
                 else:
-                    sock.send(json.dumps(dict(res=403)).encode())  # User ID not valid
+                    sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query
 
@@ -139,6 +141,8 @@ def serve_client(sock, ip):
         current_state.connected_users.remove(connections[i].user_id)
         state_changed = True
         connections.pop(i)
+    else:
+        print('[!] User not found when disconnecting!')
     sock.close()  # Close the connection
 
 
@@ -176,7 +180,6 @@ def control_conn():
     try:
         global current_state
         global state_changed
-        previous_dict = None
         subscribe_thread.daemon = True
         subscribe_thread.start()
 
@@ -277,9 +280,6 @@ def main():
         new_conn_thread.daemon = True
         new_conn_thread.start()
 
-        control_conn_thread.daemon = True
-        control_conn_thread.start()
-
         # Server's IP and port
         # host = '147.83.118.154'
         host = '10.0.0.1'
@@ -290,6 +290,9 @@ def main():
 
         # Configure how many client the server can listen simultaneously
         server_socket.listen(1)
+
+        control_conn_thread.daemon = True
+        control_conn_thread.start()
 
         # Infinite loop listening for new connections
         while True:
@@ -310,7 +313,6 @@ def main():
     except OSError:
         print("\n\n[!] Error when binding address and port for server! Stopping...")
         stop = True
-        kill_thread(control_conn_thread.ident)
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
         print("[I] AP stopped.")
