@@ -17,7 +17,7 @@ print(' [*] Waiting for logs. To exit press CTRL+C')
 
 
 def callback(ch, method, properties, body):
-    print(" [x] %r:%r" % (method.routing_key, body))
+    print(" [x] " + str(method.routing_key) + ": " + body.decode("utf-8"))
 
 
 channel.basic_consume(
