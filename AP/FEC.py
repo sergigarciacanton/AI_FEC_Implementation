@@ -8,11 +8,9 @@ import json
 import pika
 import ctypes
 
-
 access_point = pyaccesspoint.AccessPoint(wlan='wlan0', ssid='Test301', password='1234567890',
                                          ip='10.0.0.1', netmask='255.255.255.0', inet='eth0')
 connections = []
-valid_ids = [1, 2, 3]
 stop = False
 
 
@@ -41,16 +39,10 @@ class Fec:
 
 
 def stop_program(wireshark_if, tshark_if):
-    try:
-        if wireshark_if == "y" or wireshark_if == "":
-            os.system("sudo screen -S ap-wireshark -X stuff '^C\n'")
-    except:
-        pass
-    try:
-        if tshark_if == "y" or tshark_if == "":
-            os.system("sudo screen -S ap-tshark -X stuff '^C\n'")
-    except:
-        pass
+    if wireshark_if == "y" or wireshark_if == "":
+        os.system("sudo screen -S ap-wireshark -X stuff '^C\n'")
+    if tshark_if == "y" or tshark_if == "":
+        os.system("sudo screen -S ap-tshark -X stuff '^C\n'")
 
 
 def listen_new_conn():
@@ -126,6 +118,8 @@ def serve_client(sock, ip):
             except ValueError:
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query
 
+        elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
+            break
         else:
             sock.send(json.dumps(dict(res=400)).encode())
 
