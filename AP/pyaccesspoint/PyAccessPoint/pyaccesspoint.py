@@ -141,7 +141,7 @@ class AccessPoint:
     def _start_router(self):
         self._pre_start()
         s = 'ifconfig ' + self.wlan + ' up ' + self.ip + ' netmask ' + self.netmask
-        logging.debug('created interface: mon.' + self.wlan + ' on IP: ' + self.ip)
+        logging.debug('created interface: ' + self.wlan + ' on IP: ' + self.ip)
         r = self._execute_shell(s)
         logging.debug(r)
         # print('sleeping for 2 seconds.')

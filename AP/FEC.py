@@ -5,13 +5,10 @@ import threading
 import subprocess
 import os
 import json
-import pika
 import ctypes
-
-access_point = pyaccesspoint.AccessPoint(wlan='wlan0', ssid='Test301', password='1234567890',
-                                         ip='10.0.0.1', netmask='255.255.255.0', inet='eth0')
-connections = []
-stop = False
+import sys
+import logging
+import pika
 
 
 class Connection:
@@ -25,7 +22,7 @@ class Connection:
         return f"User ID: {self.user_id} | Socket ID: {self.sock} | MAC: {self.mac} | IP: {self.ip}"
 
 
-class Fec:
+class FEC:
     def __init__(self, gpu, ram, bw, rtt):
         self.gpu = gpu
         self.ram = ram
@@ -36,6 +33,49 @@ class Fec:
     def __str__(self):
         return f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | " \
                f"RTT: {self.rtt} ms | Connected users: {self.connected_users}"
+
+
+class VNF:
+    def __init__(self, source, target, ram, gpu, rtt, bw, previous_node, current_node, fec_linked):
+        self.source = source
+        self.target = target
+        self.gpu = gpu
+        self.ram = ram
+        self.bw = bw
+        self.rtt = rtt
+        self.previous_node = previous_node
+        self.current_node = current_node
+        self.fec_linked = fec_linked
+
+    def __str__(self):
+        return f"Source/Target: {self.source}/{self.target} | GPU: {self.gpu} cores | RAM: {self.ram} GB | " \
+               f"BW: {self.bw} kbps | RTT: {self.rtt} ms | " \
+               f"Nodes (previous/current): {self.previous_node}/{self.current_node} | Linked to FEC: {self.fec_linked}"
+
+
+access_point = pyaccesspoint.AccessPoint(wlan='wlan0', ssid='Test301', password='1234567890',
+                                         ip='10.0.0.1', netmask='255.255.255.0', inet='eth0')
+connections = []
+
+fec_list = []
+current_fec_state = FEC(2048, 30, 1000, 1)
+fec_state_changed = True
+
+vnf_list = []
+my_vnf = []
+vnf_state_changed = False
+
+stop = False
+
+control_socket = socket.socket()
+rabbit_conn = pika.BlockingConnection(
+    pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
+
+logger = logging.getLogger('')
+logger.setLevel(logging.DEBUG)
+logger.addHandler(logging.FileHandler('logs/fec.log', mode='w', encoding='utf-8'))
+logger.addHandler(logging.StreamHandler(sys.stdout))
+logging.getLogger('pika').setLevel(logging.WARNING)
 
 
 def stop_program(wireshark_if, tshark_if):
@@ -62,7 +102,7 @@ def listen_new_conn():
         except KeyboardInterrupt:
             pass
         except subprocess.CalledProcessError:
-            print('[I] No users connected')
+            logger.debug('[D] No users connected')
             time.sleep(12)
 
 
@@ -78,18 +118,18 @@ def check_conn(mac):
 
 
 def manage_new_conn(mac):
-    print('[!] MAC ' + mac + ' just connected. Waiting for auth...')
+    logger.info('[I] MAC ' + mac + ' just connected. Waiting for auth...')
     time.sleep(10)
     if not check_conn(mac):
-        print('[!] MAC ' + mac + ' not found. Disconnecting user...')
+        logger.info('[I] MAC ' + mac + ' not found. Disconnecting user...')
         os.system('sudo hostapd_cli -i wlan0 -p /tmp/hostapd disassociate ' + mac)  # Disconnect in case of not auth
     else:
-        print('[I] MAC ' + mac + ' authenticated. Access granted.')
+        logger.info('[I] MAC ' + mac + ' authenticated. Access granted.')
 
 
 def serve_client(sock, ip):
-    global current_state
-    global state_changed
+    global current_fec_state
+    global fec_state_changed
     while True:
         if stop:
             break
@@ -97,7 +137,7 @@ def serve_client(sock, ip):
         if not data:
             break  # If data is not received break
 
-        print("[I] From UE " + str(ip) + ": " + str(data))
+        logger.info("[I] From UE " + str(ip) + ": " + str(data))
         json_data = json.loads(data)
 
         if json_data['type'] == 'auth':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
@@ -110,18 +150,18 @@ def serve_client(sock, ip):
                                                   subprocess.check_output(['arp', '-n', ip]).decode().split('\n')[
                                                       1].split()[2],
                                                   ip))
-                    current_state.connected_users.append(json_data['user_id'])
-                    state_changed = True
+                    current_fec_state.connected_users.append(json_data['user_id'])
+                    fec_state_changed = True
                     sock.send(json.dumps(dict(res=200)).encode())  # Access granted
                 else:
                     sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
-                sock.send(json.dumps(dict(res=404)).encode())  # Wrong query
+                sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
 
         elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
             break
         else:
-            sock.send(json.dumps(dict(res=400)).encode())
+            sock.send(json.dumps(dict(res=400)).encode())  # Bad request
 
     found = False
     i = 0
@@ -131,12 +171,12 @@ def serve_client(sock, ip):
         else:
             i += 1
     if found:
-        print('[I] User ' + ip + ' disconnected.')
-        current_state.connected_users.remove(connections[i].user_id)
-        state_changed = True
+        logger.info('[I] User ' + ip + ' disconnected.')
+        current_fec_state.connected_users.remove(connections[i].user_id)
+        fec_state_changed = True
         connections.pop(i)
     else:
-        print('[!] User not found when disconnecting!')
+        logger.error('[!] Disconnected unknown valid user!')
     sock.close()  # Close the connection
 
 
@@ -150,10 +190,16 @@ def subscribe(conn, key):
     channel.queue_bind(
         exchange='test', queue=queue, routing_key=key)
 
-    print('[I] Waiting for published data...')
+    logger.info('[I] Waiting for published data...')
 
     def callback(ch, method, properties, body):
-        print("[I] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
+        global fec_list
+        global vnf_list
+        logger.debug("[D] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
+        if str(method.routing_key) == 'fec':
+            fec_list = json.dumps(body.decode('utf-8'))
+        elif str(method.routing_key) == 'vnf':
+            vnf_list = json.dumps(body.decode('utf-8'))
 
     channel.basic_consume(
         queue=queue, on_message_callback=callback, auto_ack=True)
@@ -167,13 +213,18 @@ def kill_thread(thread_id):
         raise ValueError("Thread ID " + str(thread_id) + " does not exist!")
     elif killed_threads > 1:
         ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
-    print('[I] Successfully killed thread ' + str(thread_id))
+    logger.info('[I] Successfully killed thread ' + str(thread_id))
+
+
+subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec'))
 
 
 def control_conn():
     try:
-        global current_state
-        global state_changed
+        global current_fec_state
+        global fec_state_changed
+        global vnf_state_changed
+
         subscribe_thread.daemon = True
         subscribe_thread.start()
 
@@ -185,18 +236,25 @@ def control_conn():
         control_socket.send(json.dumps(dict(type="id")).encode())
         response = json.loads(control_socket.recv(1024).decode())
         if response['res'] == 200:
-            print('[I] My ID is: ' + str(response['id']))
+            logger.info('[I] My ID is: ' + str(response['id']))
         else:
-            print('[!] Error ' + response['res'])
+            logger.error('[!] Error from Control' + response['res'])
 
         while True:
-            if state_changed:
-                print('[I] New current state! Sending to control...')
-                control_socket.send(json.dumps(dict(type="fec", data=current_state.__dict__)).encode())
+            if fec_state_changed:
+                logger.info('[I] New current FEC state! Sending to control...')
+                control_socket.send(json.dumps(dict(type="fec", data=current_fec_state.__dict__)).encode())
                 response = json.loads(control_socket.recv(1024).decode())
                 if response['res'] != 200:
-                    print('[!] Error ' + response['res'])
-                state_changed = False
+                    logger.error('[!] Error from Control:' + response['res'])
+                fec_state_changed = False
+            elif vnf_state_changed:
+                logger.info('[I] Detected change on VNFs! Sending to control...')
+                control_socket.send(json.dumps(dict(type="vnf", data=my_vnf.__dict__)).encode())
+                response = json.loads(control_socket.recv(1024).decode())
+                if response['res'] != 200:
+                    logger.error('[!] Error ' + response['res'])
+                vnf_state_changed = False
     except KeyboardInterrupt:
         kill_thread(subscribe_thread.ident)
         subscribe_thread.join()
@@ -209,14 +267,7 @@ def control_conn():
         control_socket.close()
 
 
-fec_list = []
-control_socket = socket.socket()
-rabbit_conn = pika.BlockingConnection(
-    pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
-subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec'))
-current_state = Fec(2048, 30, 1000, 1)
 control_conn_thread = threading.Thread(target=control_conn)
-state_changed = False
 
 
 def main():
@@ -231,7 +282,7 @@ def main():
         update = input("[?] Install/Update dependencies? Y/n: ")
         update = update.lower()
         if update == "y":
-            print("[I] Checking/Installing dependencies, please wait...")
+            logger.info("[I] Checking/Installing dependencies, please wait...")
             os.system("sudo apt-get update")
             os.system("sudo apt-get install dnsmasq -y")
             os.system("sudo apt-get install wireshark -y")
@@ -254,14 +305,14 @@ def main():
         # /WIRESHARK & TSHARK QUESTION
 
         # START AP
-        print("[I] Starting AP on wlan0...")
+        logger.info("[I] Starting AP on wlan0...")
         access_point.start()
         if wireshark_if == "y" or wireshark_if == "":
-            print("[I] Starting WIRESHARK...")
+            logger.info("[I] Starting Wireshark...")
             os.system("sudo screen -S ap-wireshark -m -d wireshark -i wlan0 -k -w " + script_path +
                       "logs/ap-wireshark.pcap")
         if tshark_if == "y" or tshark_if == "":
-            print("[I] Starting TSHARK...")
+            logger.info("[I] Starting Tshark...")
             os.system("sudo screen -S ap-tshark -m -d tshark -i wlan0 -w " + script_path +
                       "logs/ap-tshark.pcap")
         # /START AP
@@ -275,7 +326,6 @@ def main():
         new_conn_thread.start()
 
         # Server's IP and port
-        # host = '147.83.118.154'
         host = '10.0.0.1'
         port = 5010
 
@@ -291,25 +341,25 @@ def main():
         # Infinite loop listening for new connections
         while True:
             conn, address = server_socket.accept()  # Accept new connection
-            print("Connection from: " + str(address))
+            logger.info("[I] New connection from: " + str(address))
             socket_thread = threading.Thread(target=serve_client, args=(conn, address[0]))
             socket_thread.daemon = True
             socket_thread.start()
     except KeyboardInterrupt:
-        print("\n\n[!] Stopping... (Dont worry if you get errors)")
+        logger.info("\n\n[!] Stopping... (Dont worry if you get errors)")
         stop = True
         kill_thread(control_conn_thread.ident)
         for connection in connections:
             connection.sock.close()
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
-        print("[I] AP stopped.")
+        logger.info("[I] AP stopped.")
     except OSError:
-        print("\n\n[!] Error when binding address and port for server! Stopping...")
+        logger.critical("\n\n[!] Error when binding address and port for server! Stopping...")
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
-        print("[I] AP stopped.")
+        logger.info("[I] AP stopped.")
 
 
 if __name__ == '__main__':
