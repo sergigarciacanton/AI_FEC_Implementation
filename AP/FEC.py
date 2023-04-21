@@ -36,16 +36,29 @@ class FEC:
 
 
 class VNF:
-    def __init__(self, source, target, ram, gpu, rtt, bw, previous_node, current_node, fec_linked):
-        self.source = source
-        self.target = target
-        self.gpu = gpu
-        self.ram = ram
-        self.bw = bw
-        self.rtt = rtt
-        self.previous_node = previous_node
-        self.current_node = current_node
-        self.fec_linked = fec_linked
+    # def __init__(self, source, target, ram, gpu, rtt, bw, previous_node, current_node, fec_linked, user_id):
+    #     self.source = source
+    #     self.target = target
+    #     self.gpu = gpu
+    #     self.ram = ram
+    #     self.bw = bw
+    #     self.rtt = rtt
+    #     self.previous_node = previous_node
+    #     self.current_node = current_node
+    #     self.fec_linked = fec_linked
+    #     self.user_id = user_id
+
+    def __init__(self, user_id, json_data):
+        self.source = json_data['source']
+        self.target = json_data['target']
+        self.gpu = json_data['gpu']
+        self.ram = json_data['ram']
+        self.bw = json_data['bw']
+        self.rtt = json_data['rtt']
+        self.previous_node = json_data['previous_node']
+        self.current_node = json_data['current_node']
+        self.fec_linked = json_data['fec_linked']
+        self.user_id = user_id
 
     def __str__(self):
         return f"Source/Target: {self.source}/{self.target} | GPU: {self.gpu} cores | RAM: {self.ram} GB | " \
@@ -62,7 +75,6 @@ current_fec_state = FEC(2048, 30, 1000, 1)
 fec_state_changed = True
 
 vnf_list = []
-my_vnf = []
 vnf_state_changed = False
 
 stop = False
@@ -72,7 +84,7 @@ rabbit_conn = pika.BlockingConnection(
     pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
 
 logger = logging.getLogger('')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 logger.addHandler(logging.FileHandler('logs/fec.log', mode='w', encoding='utf-8'))
 logger.addHandler(logging.StreamHandler(sys.stdout))
 logging.getLogger('pika').setLevel(logging.WARNING)
@@ -130,6 +142,7 @@ def manage_new_conn(mac):
 def serve_client(sock, ip):
     global current_fec_state
     global fec_state_changed
+    global vnf_state_changed
     while True:
         if stop:
             break
@@ -157,7 +170,18 @@ def serve_client(sock, ip):
                     sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
-
+        elif json_data['type'] == 'vnf':
+            try:
+                vnf_list.append(VNF(int(json_data['user_id']), json_data['data']))
+                current_fec_state.ram -= json_data['data']['ram']
+                current_fec_state.gpu -= json_data['data']['gpu']
+                current_fec_state.bw -= json_data['data']['bw']
+                current_fec_state.rtt -= json_data['data']['rtt']
+                fec_state_changed = True
+                vnf_state_changed = True
+                sock.send(json.dumps(dict(res=200)).encode())  # Access granted
+            except ValueError:
+                sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
             break
         else:
@@ -172,6 +196,7 @@ def serve_client(sock, ip):
             i += 1
     if found:
         logger.info('[I] User ' + ip + ' disconnected.')
+        # FREE RESOURCES
         current_fec_state.connected_users.remove(connections[i].user_id)
         fec_state_changed = True
         connections.pop(i)
@@ -213,7 +238,7 @@ def kill_thread(thread_id):
         raise ValueError("Thread ID " + str(thread_id) + " does not exist!")
     elif killed_threads > 1:
         ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, 0)
-    logger.info('[I] Successfully killed thread ' + str(thread_id))
+    logger.debug('[D] Successfully killed thread ' + str(thread_id))
 
 
 subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec'))
@@ -248,9 +273,9 @@ def control_conn():
                 if response['res'] != 200:
                     logger.error('[!] Error from Control:' + response['res'])
                 fec_state_changed = False
-            elif vnf_state_changed:
+            if vnf_state_changed:
                 logger.info('[I] Detected change on VNFs! Sending to control...')
-                control_socket.send(json.dumps(dict(type="vnf", data=my_vnf.__dict__)).encode())
+                control_socket.send(json.dumps(dict(type="vnf", data=vnf_list.__dict__)).encode())
                 response = json.loads(control_socket.recv(1024).decode())
                 if response['res'] != 200:
                     logger.error('[!] Error ' + response['res'])
