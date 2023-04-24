@@ -48,7 +48,7 @@ class VNF:
     #     self.fec_linked = fec_linked
     #     self.user_id = user_id
 
-    def __init__(self, user_id, json_data):
+    def __init__(self, json_data):
         self.source = json_data['source']
         self.target = json_data['target']
         self.gpu = json_data['gpu']
@@ -58,7 +58,7 @@ class VNF:
         self.previous_node = json_data['previous_node']
         self.current_node = json_data['current_node']
         self.fec_linked = json_data['fec_linked']
-        self.user_id = user_id
+        self.user_id = json_data['user_id']
 
     def __str__(self):
         return f"Source/Target: {self.source}/{self.target} | GPU: {self.gpu} cores | RAM: {self.ram} GB | " \
@@ -72,10 +72,10 @@ connections = []
 
 fec_list = []
 current_fec_state = FEC(2048, 30, 1000, 1)
+my_fec_id = -1
 fec_state_changed = True
 
 vnf_list = []
-vnf_state_changed = False
 
 stop = False
 
@@ -142,7 +142,6 @@ def manage_new_conn(mac):
 def serve_client(sock, ip):
     global current_fec_state
     global fec_state_changed
-    global vnf_state_changed
     while True:
         if stop:
             break
@@ -165,21 +164,29 @@ def serve_client(sock, ip):
                                                   ip))
                     current_fec_state.connected_users.append(json_data['user_id'])
                     fec_state_changed = True
-                    sock.send(json.dumps(dict(res=200)).encode())  # Access granted
+                    if my_fec_id == -1:
+                        sock.send(json.dumps(dict(res=500)).encode())  # FEC not connected to Control
+                    else:
+                        sock.send(json.dumps(dict(res=200, id=my_fec_id)).encode())  # Access granted
                 else:
                     sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'vnf':
             try:
-                vnf_list.append(VNF(int(json_data['user_id']), json_data['data']))
-                current_fec_state.ram -= json_data['data']['ram']
-                current_fec_state.gpu -= json_data['data']['gpu']
-                current_fec_state.bw -= json_data['data']['bw']
-                current_fec_state.rtt -= json_data['data']['rtt']
-                fec_state_changed = True
-                vnf_state_changed = True
-                sock.send(json.dumps(dict(res=200)).encode())  # Access granted
+                # MODEL PLANE: GET ACTION
+                action = 'r'
+
+                control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
+                control_response = json.loads(control_socket.recv(1024).decode())
+                if control_response['res'] == 200:
+                    current_fec_state.ram -= json_data['data']['ram']
+                    current_fec_state.gpu -= json_data['data']['gpu']
+                    current_fec_state.bw -= json_data['data']['bw']
+                    fec_state_changed = True
+                    sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
+                else:
+                    sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
@@ -195,8 +202,18 @@ def serve_client(sock, ip):
         else:
             i += 1
     if found:
+        j = 0
+        while j < len(vnf_list):
+            if vnf_list[j]['user_id'] == connections[i].user_id:
+                break
+            else:
+                j += 1
+        if j < len(vnf_list):
+            current_fec_state.ram += vnf_list[j]['ram']
+            current_fec_state.gpu += vnf_list[j]['gpu']
+            current_fec_state.bw += vnf_list[j]['bw']
+            logger.info('[I] Releasing resources from ' + ip + '...')
         logger.info('[I] User ' + ip + ' disconnected.')
-        # FREE RESOURCES
         current_fec_state.connected_users.remove(connections[i].user_id)
         fec_state_changed = True
         connections.pop(i)
@@ -205,15 +222,17 @@ def serve_client(sock, ip):
     sock.close()  # Close the connection
 
 
-def subscribe(conn, key):
+def subscribe(conn, key_string):
     channel = conn.channel()
 
     channel.exchange_declare(exchange='test', exchange_type='direct')
 
     queue = channel.queue_declare(queue='', exclusive=True).method.queue
 
-    channel.queue_bind(
-        exchange='test', queue=queue, routing_key=key)
+    keys = key_string.split(' ')
+    for key in keys:
+        channel.queue_bind(
+            exchange='test', queue=queue, routing_key=key)
 
     logger.info('[I] Waiting for published data...')
 
@@ -222,9 +241,9 @@ def subscribe(conn, key):
         global vnf_list
         logger.debug("[D] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
         if str(method.routing_key) == 'fec':
-            fec_list = json.dumps(body.decode('utf-8'))
+            fec_list = json.loads(body.decode('utf-8'))
         elif str(method.routing_key) == 'vnf':
-            vnf_list = json.dumps(body.decode('utf-8'))
+            vnf_list = json.loads(body.decode('utf-8'))
 
     channel.basic_consume(
         queue=queue, on_message_callback=callback, auto_ack=True)
@@ -241,14 +260,14 @@ def kill_thread(thread_id):
     logger.debug('[D] Successfully killed thread ' + str(thread_id))
 
 
-subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec'))
+subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec vnf'))
 
 
 def control_conn():
     try:
         global current_fec_state
         global fec_state_changed
-        global vnf_state_changed
+        global my_fec_id
 
         subscribe_thread.daemon = True
         subscribe_thread.start()
@@ -262,6 +281,7 @@ def control_conn():
         response = json.loads(control_socket.recv(1024).decode())
         if response['res'] == 200:
             logger.info('[I] My ID is: ' + str(response['id']))
+            my_fec_id = response['id']
         else:
             logger.error('[!] Error from Control' + response['res'])
 
@@ -273,13 +293,6 @@ def control_conn():
                 if response['res'] != 200:
                     logger.error('[!] Error from Control:' + response['res'])
                 fec_state_changed = False
-            if vnf_state_changed:
-                logger.info('[I] Detected change on VNFs! Sending to control...')
-                control_socket.send(json.dumps(dict(type="vnf", data=vnf_list.__dict__)).encode())
-                response = json.loads(control_socket.recv(1024).decode())
-                if response['res'] != 200:
-                    logger.error('[!] Error ' + response['res'])
-                vnf_state_changed = False
     except KeyboardInterrupt:
         kill_thread(subscribe_thread.ident)
         subscribe_thread.join()
