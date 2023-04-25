@@ -174,8 +174,12 @@ def serve_client(sock, ip):
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'vnf':
             try:
-                # MODEL PLANE: GET ACTION
-                action = 'r'
+                if json_data['data']['target'] != json_data['data']['current_node']:
+                    # MODEL PLANE: GET ACTION
+                    action = 'r'
+                else:
+                    # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
+                    action = 'e'
 
                 control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                 control_response = json.loads(control_socket.recv(1024).decode())
