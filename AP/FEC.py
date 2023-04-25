@@ -164,8 +164,6 @@ def serve_client(sock, ip):
                                                       1].split()[2],
                                                   ip))
                     current_fec_state.connected_users.append(json_data['user_id'])
-                    print('VNF LIST:')
-                    print(vnf_list)
                     k = 0
                     while k < len(connections):
                         if connections[k].sock == sock:
@@ -180,6 +178,7 @@ def serve_client(sock, ip):
                             else:
                                 m += 1
                         if m != len(vnf_list):
+                            logger.info('[I] Assigning resources for ' + ip + '...')
                             current_fec_state.ram -= vnf_list[m]['ram']
                             current_fec_state.gpu -= vnf_list[m]['gpu']
                             current_fec_state.bw -= vnf_list[m]['bw']
@@ -196,6 +195,14 @@ def serve_client(sock, ip):
         elif json_data['type'] == 'vnf':
             try:
                 if json_data['data']['target'] != json_data['data']['current_node']:
+                    state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
+                                        gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
+                                        bw=json_data['data']['bw'], rtt=json_data['data']['rtt'],
+                                        previous_node=json_data['data']['previous_node'],
+                                        current_node=json_data['data']['current_node'],
+                                        fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                                        fec_b_res=fec_list[1])
+                    logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                     # MODEL PLANE: GET ACTION
                     action = 'r'
                 else:
@@ -221,11 +228,13 @@ def serve_client(sock, ip):
                             else:
                                 j += 1
                         if j == len(vnf_list):
+                            logger.info('[I] Assigning resources for ' + ip + '...')
                             current_fec_state.ram -= json_data['data']['ram']
                             current_fec_state.gpu -= json_data['data']['gpu']
                             current_fec_state.bw -= json_data['data']['bw']
                             fec_state_changed = True
                         if action == 'e':
+                            logger.info('[I] Releasing resources from ' + ip + '...')
                             current_fec_state.ram += vnf_list[j]['ram']
                             current_fec_state.gpu += vnf_list[j]['gpu']
                             current_fec_state.bw += vnf_list[j]['bw']
