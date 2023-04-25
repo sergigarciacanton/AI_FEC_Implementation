@@ -84,7 +84,7 @@ rabbit_conn = pika.BlockingConnection(
     pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
 
 logger = logging.getLogger('')
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.FileHandler('logs/fec.log', mode='w', encoding='utf-8'))
 logger.addHandler(logging.StreamHandler(sys.stdout))
 logging.getLogger('pika').setLevel(logging.WARNING)
@@ -142,6 +142,26 @@ def manage_new_conn(mac):
 def serve_client(sock, ip):
     global current_fec_state
     global fec_state_changed
+    k = 0
+    while k < len(connections):
+        if connections[k].sock == sock:
+            break
+        else:
+            k += 1
+    if k == len(connections):
+        logger.error('[!] Trying to assign resources to unknown user!')
+    else:
+        m = 0
+        while m < len(vnf_list):
+            if vnf_list[m]['user_id'] == connections[k].user_id:
+                break
+            else:
+                m += 1
+        if m != len(vnf_list):
+            current_fec_state.ram -= vnf_list[m]['ram']
+            current_fec_state.gpu -= vnf_list[m]['gpu']
+            current_fec_state.bw -= vnf_list[m]['bw']
+            fec_state_changed = True
     while True:
         if stop:
             break
@@ -184,10 +204,31 @@ def serve_client(sock, ip):
                 control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                 control_response = json.loads(control_socket.recv(1024).decode())
                 if control_response['res'] == 200:
-                    current_fec_state.ram -= json_data['data']['ram']
-                    current_fec_state.gpu -= json_data['data']['gpu']
-                    current_fec_state.bw -= json_data['data']['bw']
-                    fec_state_changed = True
+                    i = 0
+                    while i < len(connections):
+                        if connections[i].sock == sock:
+                            break
+                        else:
+                            i += 1
+                    if i == len(connections):
+                        logger.error('[!] Trying to assign resources to unknown user!')
+                    else:
+                        j = 0
+                        while j < len(vnf_list):
+                            if vnf_list[j]['user_id'] == connections[i].user_id:
+                                break
+                            else:
+                                j += 1
+                        if j == len(vnf_list):
+                            current_fec_state.ram -= json_data['data']['ram']
+                            current_fec_state.gpu -= json_data['data']['gpu']
+                            current_fec_state.bw -= json_data['data']['bw']
+                            fec_state_changed = True
+                        if action == 'e':
+                            current_fec_state.ram += vnf_list[j]['ram']
+                            current_fec_state.gpu += vnf_list[j]['gpu']
+                            current_fec_state.bw += vnf_list[j]['bw']
+                            fec_state_changed = True
                     sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
                 else:
                     sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
@@ -321,7 +362,7 @@ def main():
         os.system("sudo mkdir " + script_path + "logs > /dev/null 2>&1")
         os.system("sudo chmod 777 " + script_path + "logs")
         # UPDATE QUESTION
-        update = input("[?] Install/Update dependencies? Y/n: ")
+        update = input("[?] Install/Update dependencies? Y/n: (n)")
         update = update.lower()
         if update == "y":
             logger.info("[I] Checking/Installing dependencies, please wait...")
@@ -339,10 +380,10 @@ def main():
         # /UPDATE QUESTION
 
         # WIRESHARK & TSHARK QUESTION
-        wireshark_if = input("[?] Start WIRESHARK on wlan0? Y/n: ")
+        wireshark_if = input("[?] Start WIRESHARK on wlan0? Y/n: (Y)")
         wireshark_if = wireshark_if.lower()
         if wireshark_if != "y" and wireshark_if != "":
-            tshark_if = input("[?] Capture packets to .pcap with TSHARK? (no gui needed) Y/n: ")
+            tshark_if = input("[?] Capture packets to .pcap with TSHARK? (no gui needed) Y/n: (Y)")
             tshark_if = tshark_if.lower()
         # /WIRESHARK & TSHARK QUESTION
 
