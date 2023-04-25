@@ -142,26 +142,7 @@ def manage_new_conn(mac):
 def serve_client(sock, ip):
     global current_fec_state
     global fec_state_changed
-    k = 0
-    while k < len(connections):
-        if connections[k].sock == sock:
-            break
-        else:
-            k += 1
-    if k == len(connections):
-        logger.error('[!] Trying to assign resources to unknown user!')
-    else:
-        m = 0
-        while m < len(vnf_list):
-            if vnf_list[m]['user_id'] == connections[k].user_id:
-                break
-            else:
-                m += 1
-        if m != len(vnf_list):
-            current_fec_state.ram -= vnf_list[m]['ram']
-            current_fec_state.gpu -= vnf_list[m]['gpu']
-            current_fec_state.bw -= vnf_list[m]['bw']
-            fec_state_changed = True
+    global vnf_list
     while True:
         if stop:
             break
@@ -183,6 +164,26 @@ def serve_client(sock, ip):
                                                       1].split()[2],
                                                   ip))
                     current_fec_state.connected_users.append(json_data['user_id'])
+                    print('VNF LIST:')
+                    print(vnf_list)
+                    k = 0
+                    while k < len(connections):
+                        if connections[k].sock == sock:
+                            break
+                        else:
+                            k += 1
+                    if k != len(connections):
+                        m = 0
+                        while m < len(vnf_list):
+                            if vnf_list[m]['user_id'] == connections[k].user_id:
+                                break
+                            else:
+                                m += 1
+                        if m != len(vnf_list):
+                            current_fec_state.ram -= vnf_list[m]['ram']
+                            current_fec_state.gpu -= vnf_list[m]['gpu']
+                            current_fec_state.bw -= vnf_list[m]['bw']
+                            fec_state_changed = True
                     fec_state_changed = True
                     if my_fec_id == -1:
                         sock.send(json.dumps(dict(res=500)).encode())  # FEC not connected to Control
