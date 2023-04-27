@@ -264,7 +264,7 @@ class AccessPoint:
             return False
 
         if self.is_running():
-            logging.debug("Already started")
+            logging.warning("Already started")
             return True
 
         self._write_hostapd_config()
