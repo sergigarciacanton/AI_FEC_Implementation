@@ -116,6 +116,8 @@ def listen_new_conn():
         except subprocess.CalledProcessError:
             logger.debug('[D] No users connected')
             time.sleep(12)
+        except Exception as e:
+            logger.exception(e)
 
 
 def check_conn(mac):
@@ -358,6 +360,8 @@ def control_conn():
         subscribe_thread.join()
         rabbit_conn.close()
         control_socket.close()
+    except Exception as e:
+        logger.exception(e)
 
 
 control_conn_thread = threading.Thread(target=control_conn)
@@ -453,6 +457,8 @@ def main():
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
         logger.info("[I] AP stopped.")
+    except Exception as e:
+        logger.exception(e)
 
 
 if __name__ == '__main__':
