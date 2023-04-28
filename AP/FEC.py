@@ -321,10 +321,9 @@ def main():
             os.system("sudo apt-get install screen -y")
             os.system("sudo apt-get install python-pip -y")
             os.system("sudo apt-get install python3-pip -y")
-            os.system("sudo apt-get install python3-dev libffi-dev libssl-dev libxml2-dev libxslt1-dev "
-                      "libjpeg62-turbo-dev zlib1g-dev -y")
+            os.system("sudo apt-get install python3-dev libffi-dev libssl-dev -y")
             os.system("sudo apt-get install libpcap-dev -y")
-            os.system("sudo python -m pip install pcapy")
+            os.system("sudo python -m pip install colorlog pika")
         # /UPDATE QUESTION
 
         # WIRESHARK & TSHARK QUESTION
@@ -346,7 +345,7 @@ def main():
             else:
                 logger.warning('[!] CUDA device not found! Using fake value...')
                 gpu = 20
-            ram = psutil.virtual_memory().free / (1024 ** 3)
+            ram = int(psutil.virtual_memory().free / (1024 ** 3))
             bw = 54
             rtt = 1
             current_fec_state = FEC(gpu, ram, bw, rtt)
@@ -400,6 +399,7 @@ def main():
             my_fec_id = response['id']
         else:
             logger.error('[!] Error from Control' + response['res'])
+        send_fec_message()
 
         # Infinite loop listening for new connections
         while True:
@@ -426,8 +426,24 @@ def main():
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
         logger.info("[I] AP stopped.")
+    except TypeError:
+        logger.critical("[!] Detected error in value type at one variable! Stopping...")
+        stop = True
+        access_point.stop()
+        stop_program(wireshark_if, tshark_if)
+        logger.info("[I] AP stopped.")
+    except ValueError:
+        logger.critical("[!] Detected error in value at one variable! Stopping...")
+        stop = True
+        access_point.stop()
+        stop_program(wireshark_if, tshark_if)
+        logger.info("[I] AP stopped.")
     except Exception as e:
         logger.exception(e)
+        stop = True
+        access_point.stop()
+        stop_program(wireshark_if, tshark_if)
+        logger.info("[I] AP stopped.")
 
 
 if __name__ == '__main__':
