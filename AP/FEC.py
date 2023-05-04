@@ -160,56 +160,74 @@ def serve_client(sock, ip):
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'vnf':
             try:
+                valid_vnf = False
                 if json_data['data']['target'] != json_data['data']['current_node']:
-                    state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
-                                        gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
-                                        bw=json_data['data']['bw'], rtt=json_data['data']['rtt'],
-                                        previous_node=json_data['data']['previous_node'],
-                                        current_node=json_data['data']['current_node'],
-                                        fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
-                                        fec_b_res=fec_list[1])
-                    logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
+                    if json_data['data']['ram'] > current_fec_state.ram or json_data['data']['gpu'] > current_fec_state.gpu or json_data['data']['bw'] > current_fec_state.bw or json_data['data']['rtt'] < current_fec_state.rtt:
+                        sock.send(json.dumps(dict(res=403)).encode())  # Asked for unavailable resources
+                    else:
+                        valid_vnf = True
+                    k = 0
+                    while k < len(fec_list) and valid_vnf is True:
+                        if fec_list[k]['fec_id'] == json_data['data']['target']:
+                            break
+                        else:
+                            k += 1
+                    if k == len(fec_list) and valid_vnf is True:
+                        sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
+                        valid_vnf = False
+                    # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
+                    #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
+                    #                     bw=json_data['data']['bw'], rtt=json_data['data']['rtt'],
+                    #                     previous_node=json_data['data']['previous_node'],
+                    #                     current_node=json_data['data']['current_node'],
+                    #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                    #                     fec_b_res=fec_list[1])
+                    # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                     # MODEL PLANE: GET ACTION
                     action = 'r'
                 else:
                     # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
                     action = 'e'
+                    valid_vnf = True
 
-                control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
-                control_response = json.loads(control_socket.recv(1024).decode())
-                if control_response['res'] == 200:
-                    i = 0
-                    while i < len(connections):
-                        if connections[i].sock == sock:
-                            break
-                        else:
-                            i += 1
-                    if i == len(connections):
-                        logger.error('[!] Trying to assign resources to unknown user!')
-                    else:
-                        j = 0
-                        while j < len(vnf_list):
-                            if vnf_list[j]['user_id'] == connections[i].user_id:
+                if valid_vnf:
+                    control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
+                    control_response = json.loads(control_socket.recv(1024).decode())
+                    if control_response['res'] == 200:
+                        i = 0
+                        while i < len(connections):
+                            if connections[i].sock == sock:
                                 break
                             else:
-                                j += 1
-                        if j == len(vnf_list):
-                            logger.info('[I] Assigning resources for ' + ip + '...')
-                            current_fec_state.ram -= json_data['data']['ram']
-                            current_fec_state.gpu -= json_data['data']['gpu']
-                            current_fec_state.bw -= json_data['data']['bw']
-                            send_fec_message()
-                        if action == 'e':
-                            logger.info('[I] Releasing resources from ' + ip + '...')
-                            current_fec_state.ram += vnf_list[j]['ram']
-                            current_fec_state.gpu += vnf_list[j]['gpu']
-                            current_fec_state.bw += vnf_list[j]['bw']
-                            send_fec_message()
-                    sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
-                else:
-                    sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
+                                i += 1
+                        if i == len(connections):
+                            logger.error('[!] Trying to assign resources to unknown user!')
+                        else:
+                            j = 0
+                            while j < len(vnf_list):
+                                if vnf_list[j]['user_id'] == connections[i].user_id:
+                                    break
+                                else:
+                                    j += 1
+                            if j == len(vnf_list):
+                                logger.info('[I] Assigning resources for ' + ip + '...')
+                                current_fec_state.ram -= json_data['data']['ram']
+                                current_fec_state.gpu -= json_data['data']['gpu']
+                                current_fec_state.bw -= json_data['data']['bw']
+                                send_fec_message()
+                            if action == 'e':
+                                logger.info('[I] Releasing resources from ' + ip + '...')
+                                current_fec_state.ram += vnf_list[j]['ram']
+                                current_fec_state.gpu += vnf_list[j]['gpu']
+                                current_fec_state.bw += vnf_list[j]['bw']
+                                send_fec_message()
+                        sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
+                    else:
+                        sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
             except ValueError:
-                sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
+                sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
+            except IndexError:
+                sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
         elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
             break
         else:
