@@ -1,3 +1,4 @@
+import configparser
 import psutil
 import torch
 from colorlog import ColoredFormatter
@@ -38,8 +39,13 @@ class FEC:
                f"RTT: {self.rtt} ms | Connected users: {self.connected_users}"
 
 
-access_point = pyaccesspoint.AccessPoint(wlan='wlan0', ssid='Test301', password='1234567890',
-                                         ip='10.0.0.1', netmask='255.255.255.0', inet='eth0')
+config = configparser.ConfigParser()
+config.read("/home/sergi/Documents/Codigo/Control-Scenario/AP/fec.ini")
+general = config['general']
+
+access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
+                                         password=general['wlan_password'], ip=general['wlan_ap_ip'],
+                                         netmask=general['wlan_netmask'], inet=general['eth_if_name'])
 connections = []
 
 fec_list = []
@@ -52,11 +58,12 @@ stop = False
 
 control_socket = socket.socket()
 rabbit_conn = pika.BlockingConnection(
-    pika.ConnectionParameters('147.83.118.153', credentials=pika.PlainCredentials('sergi', 'EETAC2023')))
+    pika.ConnectionParameters(general['control_ip'], credentials=pika.PlainCredentials(general['control_username'],
+                                                                                       general['control_password'])))
 
 logger = logging.getLogger('')
-logger.setLevel(logging.DEBUG)
-logger.addHandler(logging.FileHandler('logs/fec.log', mode='w', encoding='utf-8'))
+logger.setLevel(int(general['log_level']))
+logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter())
 logger.addHandler(stream_handler)
@@ -273,14 +280,14 @@ def send_fec_message():
 def subscribe(conn, key_string):
     channel = conn.channel()
 
-    channel.exchange_declare(exchange='test', exchange_type='direct')
+    channel.exchange_declare(exchange=general['control_exchange_name'], exchange_type='direct')
 
     queue = channel.queue_declare(queue='', exclusive=True).method.queue
 
     keys = key_string.split(' ')
     for key in keys:
         channel.queue_bind(
-            exchange='test', queue=queue, routing_key=key)
+            exchange=general['control_exchange_name'], queue=queue, routing_key=key)
 
     logger.info('[I] Waiting for published data...')
 
@@ -356,7 +363,6 @@ def main():
         resources_if = input("[?] Use real available resources? Y/n: (n) ")
         if resources_if == 'Y' or resources_if == 'y':
             # GET CURRENT AVAILABLE RESOURCES
-            logger.warning('[!] Not implemented... Using fake version')
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             if device.type == 'cuda':
                 gpu = int(torch.cuda.mem_get_info()[0] / (1024 ** 3))
@@ -391,8 +397,8 @@ def main():
         new_conn_thread.start()
 
         # Server's IP and port
-        host = '10.0.0.1'
-        port = 5010
+        host = general['wlan_ap_ip']
+        port = int(general['server_port'])
 
         server_socket = socket.socket()  # Create socket
         server_socket.bind((host, port))  # Bind IP address and port together
@@ -405,8 +411,8 @@ def main():
         subscribe_thread.daemon = True
         subscribe_thread.start()
 
-        host = '147.83.118.153'
-        port = 5000
+        host = general['control_ip']
+        port = int(general['control_port'])
 
         control_socket.connect((host, port))
 
