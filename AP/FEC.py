@@ -27,16 +27,15 @@ class Connection:
 
 
 class FEC:
-    def __init__(self, gpu, ram, bw, rtt):
+    def __init__(self, gpu, ram, bw):
         self.gpu = gpu
         self.ram = ram
         self.bw = bw
-        self.rtt = rtt
         self.connected_users = []
 
     def __str__(self):
-        return f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps | " \
-               f"RTT: {self.rtt} ms | Connected users: {self.connected_users}"
+        return f"GPU: {self.gpu} cores | RAM: {self.ram} GB | BW: {self.bw} kbps |" \
+               f" Connected users: {self.connected_users}"
 
 
 config = configparser.ConfigParser()
@@ -49,7 +48,7 @@ access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=gene
 connections = []
 
 fec_list = []
-current_fec_state = FEC(20, 30, 54, 1)
+current_fec_state = FEC(20, 30, 54)
 my_fec_id = -1
 
 vnf_list = []
@@ -169,7 +168,9 @@ def serve_client(sock, ip):
             try:
                 valid_vnf = False
                 if json_data['data']['target'] != json_data['data']['current_node']:
-                    if json_data['data']['ram'] > current_fec_state.ram or json_data['data']['gpu'] > current_fec_state.gpu or json_data['data']['bw'] > current_fec_state.bw or json_data['data']['rtt'] < current_fec_state.rtt:
+                    if json_data['data']['ram'] > current_fec_state.ram or \
+                            json_data['data']['gpu'] > current_fec_state.gpu or \
+                            json_data['data']['bw'] > current_fec_state.bw:
                         sock.send(json.dumps(dict(res=403)).encode())  # Asked for unavailable resources
                     else:
                         valid_vnf = True
@@ -184,7 +185,7 @@ def serve_client(sock, ip):
                         valid_vnf = False
                     # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
                     #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
-                    #                     bw=json_data['data']['bw'], rtt=json_data['data']['rtt'],
+                    #                     bw=json_data['data']['bw'],
                     #                     previous_node=json_data['data']['previous_node'],
                     #                     current_node=json_data['data']['current_node'],
                     #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
@@ -198,39 +199,48 @@ def serve_client(sock, ip):
                     valid_vnf = True
 
                 if valid_vnf:
-                    control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
-                    control_response = json.loads(control_socket.recv(1024).decode())
-                    if control_response['res'] == 200:
-                        i = 0
-                        while i < len(connections):
-                            if connections[i].sock == sock:
-                                break
-                            else:
-                                i += 1
-                        if i == len(connections):
-                            logger.error('[!] Trying to assign resources to unknown user!')
+                    m = 0
+                    while m < len(vnf_list):
+                        if json_data['data']['user_id'] == vnf_list[m]['user_id']:
+                            break
                         else:
-                            j = 0
-                            while j < len(vnf_list):
-                                if vnf_list[j]['user_id'] == connections[i].user_id:
-                                    break
-                                else:
-                                    j += 1
-                            if j == len(vnf_list):
-                                logger.info('[I] Assigning resources for ' + ip + '...')
-                                current_fec_state.ram -= json_data['data']['ram']
-                                current_fec_state.gpu -= json_data['data']['gpu']
-                                current_fec_state.bw -= json_data['data']['bw']
-                                send_fec_message()
-                            if action == 'e':
-                                logger.info('[I] Releasing resources from ' + ip + '...')
-                                current_fec_state.ram += vnf_list[j]['ram']
-                                current_fec_state.gpu += vnf_list[j]['gpu']
-                                current_fec_state.bw += vnf_list[j]['bw']
-                                send_fec_message()
+                            m += 1
+                    if json_data['data']['target'] == my_fec_id and m == len(vnf_list):
                         sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
                     else:
-                        sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
+                        control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
+                        control_response = json.loads(control_socket.recv(1024).decode())
+                        if control_response['res'] == 200:
+                            i = 0
+                            while i < len(connections):
+                                if connections[i].sock == sock:
+                                    break
+                                else:
+                                    i += 1
+                            if i == len(connections):
+                                logger.error('[!] Trying to assign resources to unknown user!')
+                            else:
+                                j = 0
+                                while j < len(vnf_list):
+                                    if vnf_list[j]['user_id'] == connections[i].user_id:
+                                        break
+                                    else:
+                                        j += 1
+                                if j == len(vnf_list):
+                                    logger.info('[I] Assigning resources for ' + ip + '...')
+                                    current_fec_state.ram -= json_data['data']['ram']
+                                    current_fec_state.gpu -= json_data['data']['gpu']
+                                    current_fec_state.bw -= json_data['data']['bw']
+                                    send_fec_message()
+                                if action == 'e':
+                                    logger.info('[I] Releasing resources from ' + ip + '...')
+                                    current_fec_state.ram += vnf_list[j]['ram']
+                                    current_fec_state.gpu += vnf_list[j]['gpu']
+                                    current_fec_state.bw += vnf_list[j]['bw']
+                                    send_fec_message()
+                            sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
+                        else:
+                            sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
@@ -348,11 +358,11 @@ def main():
             os.system("sudo apt-get install python3-pip -y")
             os.system("sudo apt-get install python3-dev libffi-dev libssl-dev -y")
             os.system("sudo apt-get install libpcap-dev -y")
-            os.system("sudo python -m pip install colorlog pika")
+            os.system("sudo python -m pip install colorlog pika configparser")
         # /UPDATE QUESTION
 
         # WIRESHARK & TSHARK QUESTION
-        wireshark_if = input("[?] Start WIRESHARK on wlan0? Y/n: (Y) ")
+        wireshark_if = input("[?] Start WIRESHARK on " + general['wlan_if_name'] + "? Y/n: (Y) ")
         wireshark_if = wireshark_if.lower()
         if wireshark_if != "y" and wireshark_if != "":
             tshark_if = input("[?] Capture packets to .pcap with TSHARK? (no gui needed) Y/n: (Y) ")
@@ -371,20 +381,19 @@ def main():
                 gpu = 20
             ram = int(psutil.virtual_memory().free / (1024 ** 3))
             bw = 54
-            rtt = 1
-            current_fec_state = FEC(gpu, ram, bw, rtt)
+            current_fec_state = FEC(gpu, ram, bw)
         # /RESOURCES QUESTION
 
         # START AP
-        logger.info("[I] Starting AP on wlan0...")
+        logger.info("[I] Starting AP on " + general['wlan_if_name'] + "...")
         access_point.start()
         if wireshark_if == "y" or wireshark_if == "":
             logger.info("[I] Starting Wireshark...")
-            os.system("sudo screen -S ap-wireshark -m -d wireshark -i wlan0 -k -w " + script_path +
-                      "logs/ap-wireshark.pcap")
+            os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
+                      + script_path + "logs/ap-wireshark.pcap")
         if tshark_if == "y" or tshark_if == "":
             logger.info("[I] Starting Tshark...")
-            os.system("sudo screen -S ap-tshark -m -d tshark -i wlan0 -w " + script_path +
+            os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
                       "logs/ap-tshark.pcap")
         # /START AP
 
