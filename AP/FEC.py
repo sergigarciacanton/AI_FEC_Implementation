@@ -39,8 +39,10 @@ class FEC:
 
 
 config = configparser.ConfigParser()
-config.read("/home/sergi/Documents/Codigo/Control-Scenario/AP/fec.ini")
+config.read("fec.ini")
 general = config['general']
+scenario_if = 0
+locations = config['general']
 
 access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                          password=general['wlan_password'], ip=general['wlan_ap_ip'],
@@ -67,6 +69,23 @@ stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setFormatter(ColoredFormatter())
 logger.addHandler(stream_handler)
 logging.getLogger('pika').setLevel(logging.WARNING)
+
+
+def get_data_by_console(data_type, message):
+    valid = False
+    output = None
+    if data_type == int:
+        while not valid:
+            try:
+                output = int(input(message))
+                valid = True
+            except ValueError:
+                logger.warning('[!] Error in introduced data! Must be int values. Try again...')
+            except Exception as e:
+                logger.warning('[!] Unexpected error ' + str(e) + '! Try again...')
+    else:
+        logger.error('[!] Data type getter not implemented!')
+    return output
 
 
 def listen_new_conn():
@@ -166,48 +185,28 @@ def serve_client(sock, ip):
                 sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
         elif json_data['type'] == 'vnf':
             try:
-                valid_vnf = False
                 if json_data['data']['target'] != json_data['data']['current_node']:
                     if json_data['data']['ram'] > current_fec_state.ram or \
                             json_data['data']['gpu'] > current_fec_state.gpu or \
                             json_data['data']['bw'] > current_fec_state.bw:
                         sock.send(json.dumps(dict(res=403)).encode())  # Asked for unavailable resources
-                    else:
-                        valid_vnf = True
-                    k = 0
-                    while k < len(fec_list) and valid_vnf is True:
-                        if fec_list[k]['fec_id'] == json_data['data']['target']:
-                            break
-                        else:
-                            k += 1
-                    if k == len(fec_list) and valid_vnf is True:
+                    elif json_data['data']['target'] < 1 or json_data['data']['target'] > locations['max_point']:
                         sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
-                        valid_vnf = False
-                    # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
-                    #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
-                    #                     bw=json_data['data']['bw'],
-                    #                     previous_node=json_data['data']['previous_node'],
-                    #                     current_node=json_data['data']['current_node'],
-                    #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
-                    #                     fec_b_res=fec_list[1])
-                    # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
-                    # MODEL PLANE: GET ACTION
-                    action = 'r'
-                else:
-                    # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
-                    action = 'e'
-                    valid_vnf = True
-
-                if valid_vnf:
-                    m = 0
-                    while m < len(vnf_list):
-                        if json_data['data']['user_id'] == vnf_list[m]['user_id']:
-                            break
-                        else:
-                            m += 1
-                    if json_data['data']['target'] == my_fec_id and m == len(vnf_list):
-                        sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
                     else:
+                        # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
+                        #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
+                        #                     bw=json_data['data']['bw'],
+                        #                     previous_node=json_data['data']['previous_node'],
+                        #                     current_node=json_data['data']['current_node'],
+                        #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                        #                     fec_b_res=fec_list[1])
+                        # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
+                        # MODEL PLANE: GET ACTION
+                        if my_fec_id == 1:
+                            action = 'r'
+                        else:
+                            action = 'l'
+
                         control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                         control_response = json.loads(control_socket.recv(1024).decode())
                         if control_response['res'] == 200:
@@ -219,6 +218,7 @@ def serve_client(sock, ip):
                                     i += 1
                             if i == len(connections):
                                 logger.error('[!] Trying to assign resources to unknown user!')
+                                sock.send(json.dumps(dict(res=404)).encode())
                             else:
                                 j = 0
                                 while j < len(vnf_list):
@@ -231,16 +231,54 @@ def serve_client(sock, ip):
                                     current_fec_state.ram -= json_data['data']['ram']
                                     current_fec_state.gpu -= json_data['data']['gpu']
                                     current_fec_state.bw -= json_data['data']['bw']
-                                    send_fec_message()
-                                if action == 'e':
-                                    logger.info('[I] Releasing resources from ' + ip + '...')
-                                    current_fec_state.ram += vnf_list[j]['ram']
-                                    current_fec_state.gpu += vnf_list[j]['gpu']
-                                    current_fec_state.bw += vnf_list[j]['bw']
-                                    send_fec_message()
-                            sock.send(json.dumps(dict(res=200, action=action)).encode())  # Access granted
+                                send_fec_message()
+                                if locations is not None:
+                                    next_node = get_next_node(json_data['data']['current_node'], action)
+                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                              location=locations['point_'
+                                                                                 + str(next_node)])).encode())
+                                else:
+                                    sock.send(json.dumps(dict(res=200, action=action)).encode())
                         else:
                             sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
+                else:
+                    # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
+                    action = 'e'
+                    i = 0
+                    while i < len(connections):
+                        if connections[i].sock == sock:
+                            break
+                        else:
+                            i += 1
+                    if i == len(connections):
+                        logger.error('[!] Trying to release resources from unknown user!')
+                        sock.send(json.dumps(dict(res=404)).encode())
+                    else:
+                        m = 0
+                        while m < len(vnf_list):
+                            if json_data['data']['user_id'] == vnf_list[m]['user_id']:
+                                break
+                            else:
+                                m += 1
+                        if m != len(vnf_list):
+                            logger.info('[I] Releasing resources from ' + ip + '...')
+
+                            j = 0
+                            while j < len(vnf_list):
+                                if vnf_list[j]['user_id'] == connections[i].user_id:
+                                    break
+                                else:
+                                    j += 1
+                            current_fec_state.ram += vnf_list[j]['ram']
+                            current_fec_state.gpu += vnf_list[j]['gpu']
+                            current_fec_state.bw += vnf_list[j]['bw']
+                            send_fec_message()
+                        if locations is not None:
+                            next_node = json_data['data']['current_node']
+                            sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                      location=locations['point_' + str(next_node)])).encode())
+                        else:
+                            sock.send(json.dumps(dict(res=200, action=action)).encode())
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
@@ -319,6 +357,40 @@ def subscribe(conn, key_string):
 subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec vnf'))
 
 
+def get_next_node(current_location, action):
+    if scenario_if == 1 or scenario_if == 2:
+        if action == 'r':
+            return current_location + 1
+        elif action == 'l':
+            return current_location - 1
+        else:
+            return -1
+    elif scenario_if == 3 or scenario_if == 5:
+        if action == 'r':
+            return current_location + 3
+        elif action == 'l':
+            return current_location - 3
+        elif action == 'u':
+            return current_location - 2
+        elif action == 'd':
+            return current_location + 2
+        else:
+            return -1
+    elif scenario_if == 4 or scenario_if == 6:
+        if action == 'r':
+            return current_location + 1
+        elif action == 'l':
+            return current_location - 1
+        elif action == 'u':
+            return current_location - 4
+        elif action == 'd':
+            return current_location + 4
+        else:
+            return -1
+    else:
+        return -1
+
+
 def kill_thread(thread_id):
     killed_threads = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id), ctypes.py_object(SystemExit))
     if killed_threads == 0:
@@ -337,6 +409,8 @@ def stop_program(wireshark_if, tshark_if):
 
 def main():
     global current_fec_state
+    global locations
+    global scenario_if
     tshark_if = 'n'
     wireshark_if = 'n'
     try:
@@ -356,7 +430,6 @@ def main():
             os.system("sudo apt-get install screen -y")
             os.system("sudo apt-get install python-pip -y")
             os.system("sudo apt-get install python3-pip -y")
-            os.system("sudo apt-get install python3-dev libffi-dev libssl-dev -y")
             os.system("sudo apt-get install libpcap-dev -y")
             os.system("sudo python -m pip install colorlog pika configparser")
         # /UPDATE QUESTION
@@ -383,6 +456,31 @@ def main():
             bw = 54
             current_fec_state = FEC(gpu, ram, bw)
         # /RESOURCES QUESTION
+
+        # SCENARIO QUESTION
+        scenario_if = get_data_by_console(int, "[*] Choose which scenario to use (0 = No GPS use, 1 = 2_2, 2 = 2_4, "
+                                               "3 = 2_7d, 4 = 2_8, 5 = 4_12d, 6 = 4_16): (0) ")
+        if scenario_if == 1:
+            logger.info('[I] Chose scenario: 2_2')
+            locations = config['2_2']
+        elif scenario_if == 2:
+            logger.info('[I] Chose scenario: 2_4')
+            locations = config['2_4']
+        elif scenario_if == 3:
+            logger.info('[I] Chose scenario: 2_7d')
+            locations = config['2_7d']
+        elif scenario_if == 4:
+            logger.info('[I] Chose scenario: 2_8')
+            locations = config['2_8']
+        elif scenario_if == 5:
+            logger.info('[I] Chose scenario: 4_12d')
+            locations = config['4_12d']
+        elif scenario_if == 6:
+            logger.info('[I] Chose scenario: 4_16')
+            locations = config['4_16']
+        else:
+            locations = None
+        # /SCENARIO QUESTION
 
         # START AP
         logger.info("[I] Starting AP on " + general['wlan_if_name'] + "...")
