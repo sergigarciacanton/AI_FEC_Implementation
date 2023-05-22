@@ -48,7 +48,7 @@ logger = logging.getLogger('')
 logger.setLevel(int(general['log_level']))
 logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
 stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(ColoredFormatter())
+stream_handler.setFormatter(ColoredFormatter('%(log_color)s%(message)s'))
 logger.addHandler(stream_handler)
 logging.getLogger('pika').setLevel(logging.WARNING)
 
@@ -358,13 +358,18 @@ def serve_client(sock, ip):
                                 current_fec_state.gpu += vnf_list[j]['gpu']
                                 current_fec_state.bw += vnf_list[j]['bw']
                                 send_fec_message()
-                            if locations is not None:
-                                next_node = json_data['data']['current_node']
-                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                          location=locations['point_' + str(next_node)])).encode())
+                            control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
+                            control_response = json.loads(control_socket.recv(1024).decode())
+                            if control_response['res'] == 200:
+                                if locations is not None:
+                                    next_node = json_data['data']['current_node']
+                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                              location=locations['point_' + str(next_node)])).encode())
+                                else:
+                                    next_node = json_data['data']['current_node']
+                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
                             else:
-                                next_node = json_data['data']['current_node']
-                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                                sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
