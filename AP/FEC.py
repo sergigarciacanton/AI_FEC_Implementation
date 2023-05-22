@@ -39,10 +39,18 @@ class FEC:
 
 
 config = configparser.ConfigParser()
-config.read("fec.ini")
+config.read("fec_outdoor.ini")
 general = config['general']
 scenario_if = 0
 locations = config['general']
+
+logger = logging.getLogger('')
+logger.setLevel(int(general['log_level']))
+logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setFormatter(ColoredFormatter())
+logger.addHandler(stream_handler)
+logging.getLogger('pika').setLevel(logging.WARNING)
 
 access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                          password=general['wlan_password'], ip=general['wlan_ap_ip'],
@@ -61,14 +69,6 @@ control_socket = socket.socket()
 rabbit_conn = pika.BlockingConnection(
     pika.ConnectionParameters(general['control_ip'], credentials=pika.PlainCredentials(general['control_username'],
                                                                                        general['control_password'])))
-
-logger = logging.getLogger('')
-logger.setLevel(int(general['log_level']))
-logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
-stream_handler = logging.StreamHandler(sys.stdout)
-stream_handler.setFormatter(ColoredFormatter())
-logger.addHandler(stream_handler)
-logging.getLogger('pika').setLevel(logging.WARNING)
 
 
 def get_data_by_console(data_type, message):
@@ -190,7 +190,7 @@ def serve_client(sock, ip):
                             json_data['data']['gpu'] > current_fec_state.gpu or \
                             json_data['data']['bw'] > current_fec_state.bw:
                         sock.send(json.dumps(dict(res=403)).encode())  # Asked for unavailable resources
-                    elif json_data['data']['target'] < 1 or json_data['data']['target'] > locations['max_point']:
+                    elif json_data['data']['target'] < 1 or json_data['data']['target'] > int(locations['max_point']):
                         sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
                     else:
                         # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
@@ -279,6 +279,92 @@ def serve_client(sock, ip):
                                                       location=locations['point_' + str(next_node)])).encode())
                         else:
                             sock.send(json.dumps(dict(res=200, action=action)).encode())
+            except ValueError:
+                sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
+            except IndexError:
+                sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
+        elif json_data['type'] == 'state':
+            try:
+                n = 0
+                while n < len(vnf_list):
+                    if vnf_list[n]['user_id'] == json_data['data']['user_id']:
+                        break
+                    else:
+                        n += 1
+                if n == len(vnf_list):
+                    logger.warning('')
+                    sock.send(json.dumps(dict(res=404)).encode())  # User does not have active VNFs
+                else:
+                    vnf_list[n]['previous_node'] = json_data['data']['previous_node']
+                    vnf_list[n]['current_node'] = json_data['data']['current_node']
+                    vnf_list[n]['fec_linked'] = json_data['data']['fec_linked']
+                    if vnf_list[n]['target'] != json_data['data']['current_node']:
+                        # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
+                        #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
+                        #                     bw=json_data['data']['bw'],
+                        #                     previous_node=json_data['data']['previous_node'],
+                        #                     current_node=json_data['data']['current_node'],
+                        #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                        #                     fec_b_res=fec_list[1])
+                        # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
+                        # MODEL PLANE: GET ACTION
+                        if my_fec_id == 1:
+                            action = 'r'
+                        else:
+                            action = 'l'
+
+                        control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
+                        control_response = json.loads(control_socket.recv(1024).decode())
+                        if control_response['res'] == 200:
+                            if locations is not None:
+                                next_node = get_next_node(json_data['data']['current_node'], action)
+                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                          location=locations['point_'
+                                                                             + str(next_node)])).encode())
+                            else:
+                                next_node = get_next_node(json_data['data']['current_node'], action)
+                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                        else:
+                            sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
+                    else:
+                        # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
+                        action = 'e'
+                        i = 0
+                        while i < len(connections):
+                            if connections[i].sock == sock:
+                                break
+                            else:
+                                i += 1
+                        if i == len(connections):
+                            logger.error('[!] Trying to release resources from unknown user!')
+                            sock.send(json.dumps(dict(res=404)).encode())
+                        else:
+                            m = 0
+                            while m < len(vnf_list):
+                                if json_data['data']['user_id'] == vnf_list[m]['user_id']:
+                                    break
+                                else:
+                                    m += 1
+                            if m != len(vnf_list):
+                                logger.info('[I] Releasing resources from ' + ip + '...')
+
+                                j = 0
+                                while j < len(vnf_list):
+                                    if vnf_list[j]['user_id'] == connections[i].user_id:
+                                        break
+                                    else:
+                                        j += 1
+                                current_fec_state.ram += vnf_list[j]['ram']
+                                current_fec_state.gpu += vnf_list[j]['gpu']
+                                current_fec_state.bw += vnf_list[j]['bw']
+                                send_fec_message()
+                            if locations is not None:
+                                next_node = json_data['data']['current_node']
+                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                          location=locations['point_' + str(next_node)])).encode())
+                            else:
+                                next_node = json_data['data']['current_node']
+                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
