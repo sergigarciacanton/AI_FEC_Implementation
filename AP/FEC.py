@@ -202,7 +202,7 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        if my_fec_id == 1:
+                        if json_data['data']['target'] > json_data['data']['current_node']:
                             action = 'r'
                         else:
                             action = 'l'
@@ -292,7 +292,7 @@ def serve_client(sock, ip):
                     else:
                         n += 1
                 if n == len(vnf_list):
-                    logger.warning('')
+                    logger.warning('[!] User tried to update a non existing VNF!')
                     sock.send(json.dumps(dict(res=404)).encode())  # User does not have active VNFs
                 else:
                     vnf_list[n]['previous_node'] = json_data['data']['previous_node']
@@ -308,7 +308,7 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        if my_fec_id == 1:
+                        if vnf_list[n]['target'] > json_data['data']['current_node']:
                             action = 'r'
                         else:
                             action = 'l'
@@ -620,7 +620,8 @@ def main():
             logger.info('[I] My ID is: ' + str(response['id']))
             my_fec_id = response['id']
         else:
-            logger.error('[!] Error from Control' + response['res'])
+            logger.critical('[!] Error from Control' + response['res'])
+            raise Exception
         send_fec_message()
 
         # Infinite loop listening for new connections
