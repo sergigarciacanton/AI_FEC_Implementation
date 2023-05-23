@@ -614,7 +614,7 @@ def main():
 
         control_socket.connect((host, port))
 
-        control_socket.send(json.dumps(dict(type="id")).encode())
+        control_socket.send(json.dumps(dict(type="id", ip=general['my_ip'])).encode())
         response = json.loads(control_socket.recv(1024).decode())
         if response['res'] == 200:
             logger.info('[I] My ID is: ' + str(response['id']))
