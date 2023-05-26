@@ -575,6 +575,7 @@ def main():
 
         # START AP
         logger.info("[I] Starting AP on " + general['wlan_if_name'] + "...")
+        os.system('sudo systemctl stop systemd-resolved')
         access_point.start()
         if wireshark_if == "y" or wireshark_if == "":
             logger.info("[I] Starting Wireshark...")
@@ -642,30 +643,35 @@ def main():
             connection.sock.close()
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except OSError:
         logger.critical("[!] Error when binding address and port for server! Stopping...")
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except TypeError:
         logger.critical("[!] Detected error in value type at one variable! Stopping...")
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except ValueError:
         logger.critical("[!] Detected error in value at one variable! Stopping...")
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except Exception as e:
         logger.exception(e)
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
 
 
