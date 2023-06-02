@@ -667,6 +667,7 @@ def main():
             connection.sock.close()
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        time.sleep(3)
         os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except OSError:
@@ -674,6 +675,7 @@ def main():
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        time.sleep(3)
         os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except TypeError:
@@ -681,6 +683,7 @@ def main():
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        time.sleep(3)
         os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except ValueError:
@@ -688,6 +691,7 @@ def main():
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        time.sleep(3)
         os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
     except Exception as e:
@@ -695,6 +699,7 @@ def main():
         stop = True
         access_point.stop()
         stop_program(wireshark_if, tshark_if)
+        time.sleep(3)
         os.system('sudo systemctl start systemd-resolved')
         logger.info("[I] AP stopped.")
 
