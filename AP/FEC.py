@@ -125,11 +125,22 @@ def check_auth(mac):
 def manage_new_conn(mac):
     logger.info('[I] MAC ' + mac + ' just connected. Waiting for auth...')
     time.sleep(10)
-    if not check_auth(mac):
-        logger.warning('[!] MAC ' + mac + ' not found. Disconnecting user...')
-        os.system('sudo hostapd_cli -i wlan0 -p /tmp/hostapd disassociate ' + mac)  # Disconnect in case of not auth
-    else:
-        logger.info('[I] MAC ' + mac + ' authenticated. Access granted.')
+    try:
+        if not check_auth(mac):
+            output = subprocess.check_output("iw dev wlan0 station dump | grep Station", shell=True).decode()
+            macs = []
+            for line in output.split('\n'):
+                if line != '':
+                    macs.append(line.split()[1])
+            for conn_mac in macs:
+                if mac == conn_mac:
+                    logger.warning('[!] MAC ' + mac + ' not found. Disconnecting user...')
+                    os.system('sudo hostapd_cli -i wlan0 -p /tmp/hostapd disassociate ' + mac)  # Not auth. Disconnect
+                    break
+        else:
+            logger.info('[I] MAC ' + mac + ' authenticated. Access granted.')  # Auth successful
+    except subprocess.CalledProcessError:
+        logger.debug('[D] No users connected')
 
 
 def serve_client(sock, ip):
@@ -549,28 +560,41 @@ def main():
         # /RESOURCES QUESTION
 
         # SCENARIO QUESTION
-        scenario_if = get_data_by_console(int, "[*] Choose which scenario to use (0 = No GPS use, 1 = 2_2, 2 = 2_4, "
-                                               "3 = 2_7d, 4 = 2_8, 5 = 4_12d, 6 = 4_16): (0) ")
-        if scenario_if == 1:
-            logger.info('[I] Chose scenario: 2_2')
-            locations = config['2_2']
-        elif scenario_if == 2:
-            logger.info('[I] Chose scenario: 2_4')
-            locations = config['2_4']
-        elif scenario_if == 3:
-            logger.info('[I] Chose scenario: 2_7d')
-            locations = config['2_7d']
-        elif scenario_if == 4:
-            logger.info('[I] Chose scenario: 2_8')
-            locations = config['2_8']
-        elif scenario_if == 5:
-            logger.info('[I] Chose scenario: 4_12d')
-            locations = config['4_12d']
-        elif scenario_if == 6:
-            logger.info('[I] Chose scenario: 4_16')
-            locations = config['4_16']
-        else:
-            locations = None
+        valid = False
+        while not valid:
+            scenario_if = get_data_by_console(int, "[*] Choose which scenario to use (0 = No GPS use, 1 = 2_2, 2 = 2_4,"
+                                                   " 3 = 2_7d, 4 = 2_8, 5 = 4_12d, 6 = 4_16): (0) ")
+            if scenario_if == 0:
+                logger.info('[I] Chose scenario: No GPS use')
+                locations = None
+                valid = True
+            elif scenario_if == 1:
+                logger.info('[I] Chose scenario: 2_2')
+                locations = config['2_2']
+                valid = True
+            elif scenario_if == 2:
+                logger.info('[I] Chose scenario: 2_4')
+                locations = config['2_4']
+                valid = True
+            elif scenario_if == 3:
+                logger.info('[I] Chose scenario: 2_7d')
+                locations = config['2_7d']
+                valid = True
+            elif scenario_if == 4:
+                logger.info('[I] Chose scenario: 2_8')
+                locations = config['2_8']
+                valid = True
+            elif scenario_if == 5:
+                logger.info('[I] Chose scenario: 4_12d')
+                locations = config['4_12d']
+                valid = True
+            elif scenario_if == 6:
+                logger.info('[I] Chose scenario: 4_16')
+                locations = config['4_16']
+                valid = True
+            else:
+                logger.warning('[!] Invalid scenario. Try again...')
+                valid = False
         # /SCENARIO QUESTION
 
         # START AP
