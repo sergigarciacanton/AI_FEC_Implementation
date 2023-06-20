@@ -58,7 +58,7 @@ access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=gene
 connections = []
 
 fec_list = []
-current_fec_state = FEC(20, 30, 54)
+current_fec_state = FEC(20000, 30000, 54)
 my_fec_id = -1
 
 vnf_list = []
@@ -533,7 +533,7 @@ def main():
             os.system("sudo apt-get install python-pip -y")
             os.system("sudo apt-get install python3-pip -y")
             os.system("sudo apt-get install libpcap-dev -y")
-            os.system("sudo python -m pip install colorlog pika configparser")
+            os.system("sudo python -m pip install colorlog pika configparser psutil netifaces")
         # /UPDATE QUESTION
 
         # WIRESHARK & TSHARK QUESTION
@@ -550,11 +550,11 @@ def main():
             # GET CURRENT AVAILABLE RESOURCES
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             if device.type == 'cuda':
-                gpu = int(torch.cuda.mem_get_info()[0] / (1024 ** 3))
+                gpu = int(torch.cuda.mem_get_info()[0] / (1024 ** 2))
             else:
                 logger.warning('[!] CUDA device not found! Using fake value...')
-                gpu = 20
-            ram = int(psutil.virtual_memory().free / (1024 ** 3))
+                gpu = 20000
+            ram = int(psutil.virtual_memory().free / (1024 ** 2))
             bw = 54
             current_fec_state = FEC(gpu, ram, bw)
         # /RESOURCES QUESTION
