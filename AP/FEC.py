@@ -39,7 +39,7 @@ class FEC:
 
 
 config = configparser.ConfigParser()
-config.read("fec_outdoor.ini")
+config.read("fec_annex.ini")
 general = config['general']
 scenario_if = 0
 locations = config['general']
@@ -67,7 +67,7 @@ stop = False
 
 control_socket = socket.socket()
 rabbit_conn = pika.BlockingConnection(
-    pika.ConnectionParameters(general['control_ip'], credentials=pika.PlainCredentials(general['control_username'],
+    pika.ConnectionParameters(host=general['control_ip'], port=30128, credentials=pika.PlainCredentials(general['control_username'],
                                                                                        general['control_password'])))
 
 
@@ -645,7 +645,7 @@ def main():
             logger.info('[I] My ID is: ' + str(response['id']))
             my_fec_id = response['id']
         else:
-            logger.critical('[!] Error from Control' + response['res'])
+            logger.critical('[!] Error from Control' + str(response['res']))
             raise Exception
         send_fec_message()
 
