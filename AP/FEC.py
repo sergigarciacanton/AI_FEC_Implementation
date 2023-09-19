@@ -242,21 +242,21 @@ def serve_client(sock, ip):
                                 logger.error('[!] Trying to assign resources to unknown user!')
                                 sock.send(json.dumps(dict(res=404)).encode())
                             else:
+                                next_node = get_next_node(json_data['data']['current_node'], action)
+                                next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                 j = 0
                                 while j < len(vnf_list):
                                     if vnf_list[j]['user_id'] == connections[i].user_id:
                                         break
                                     else:
                                         j += 1
-                                if j == len(vnf_list):
+                                if j == len(vnf_list) and next_fec == my_fec_id:
                                     logger.info('[I] Assigning resources for ' + ip + '...')
                                     current_fec_state.ram -= json_data['data']['ram']
                                     current_fec_state.gpu -= json_data['data']['gpu']
                                     current_fec_state.bw -= json_data['data']['bw']
                                 send_fec_message()
                                 if locations is not None:
-                                    next_node = get_next_node(json_data['data']['current_node'], action)
-                                    next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                     sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
                                                               next_fec=next_fec, fec_mac=fec_list[next_fec - 1]['mac'],
                                                               location=locations['point_'
@@ -411,7 +411,7 @@ def serve_client(sock, ip):
                 break
             else:
                 j += 1
-        if j < len(vnf_list):
+        if j < len(vnf_list) and vnf_list[j]['previous_node'] != -1:
             current_fec_state.ram += vnf_list[j]['ram']
             current_fec_state.gpu += vnf_list[j]['gpu']
             current_fec_state.bw += vnf_list[j]['bw']
