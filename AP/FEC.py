@@ -13,6 +13,8 @@ import ctypes
 import sys
 import logging
 import pika
+import fcntl
+import struct
 
 
 class Connection:
@@ -27,10 +29,11 @@ class Connection:
 
 
 class FEC:
-    def __init__(self, gpu, ram, bw):
+    def __init__(self, gpu, ram, bw, mac):
         self.gpu = gpu
         self.ram = ram
         self.bw = bw
+        self.mac = mac
         self.connected_users = []
 
     def __str__(self):
@@ -57,8 +60,15 @@ access_point = pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=gene
                                          netmask=general['wlan_netmask'], inet=general['eth_if_name'])
 connections = []
 
+
+def getHwAddr(if_name):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    info = fcntl.ioctl(s.fileno(), 0x8927,  struct.pack('256s', bytes(if_name, 'utf-8')[:15]))
+    return ':'.join('%02x' % b for b in info[18:24])
+
+
 fec_list = []
-current_fec_state = FEC(20000, 30000, 54)
+current_fec_state = FEC(20000, 30000, 54, getHwAddr('wlan0'))
 my_fec_id = -1
 
 vnf_list = []
@@ -246,7 +256,9 @@ def serve_client(sock, ip):
                                 send_fec_message()
                                 if locations is not None:
                                     next_node = get_next_node(json_data['data']['current_node'], action)
+                                    next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                     sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                              next_fec=next_fec, fec_mac=fec_list[next_fec - 1]['mac'],
                                                               location=locations['point_'
                                                                                  + str(next_node)])).encode())
                                 else:
@@ -285,12 +297,9 @@ def serve_client(sock, ip):
                             current_fec_state.gpu += vnf_list[j]['gpu']
                             current_fec_state.bw += vnf_list[j]['bw']
                             send_fec_message()
-                        if locations is not None:
-                            next_node = json_data['data']['current_node']
-                            sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                      location=locations['point_' + str(next_node)])).encode())
-                        else:
-                            sock.send(json.dumps(dict(res=200, action=action)).encode())
+
+                        next_node = json_data['data']['current_node']
+                        sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
@@ -330,7 +339,9 @@ def serve_client(sock, ip):
                         if control_response['res'] == 200:
                             if locations is not None:
                                 next_node = get_next_node(json_data['data']['current_node'], action)
+                                next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                 sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                                          next_fec=next_fec, fec_mac=fec_list[next_fec - 1]['mac'],
                                                           location=locations['point_'
                                                                              + str(next_node)])).encode())
                             else:
@@ -373,18 +384,13 @@ def serve_client(sock, ip):
                             control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
                             control_response = json.loads(control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
-                                if locations is not None:
-                                    next_node = json_data['data']['current_node']
-                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                              location=locations['point_' + str(next_node)])).encode())
-                                else:
-                                    next_node = json_data['data']['current_node']
-                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                                next_node = json_data['data']['current_node']
+                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
                             else:
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
-            except IndexError:
+            except IndexError as e:
                 sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
         elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
             break
@@ -467,7 +473,7 @@ def get_next_node(current_location, action):
         elif action == 'l':
             return current_location - 1
         else:
-            return -1
+            return current_location
     elif scenario_if == 3 or scenario_if == 5:
         if action == 'r':
             return current_location + 3
@@ -478,7 +484,7 @@ def get_next_node(current_location, action):
         elif action == 'd':
             return current_location + 2
         else:
-            return -1
+            return current_location
     elif scenario_if == 4 or scenario_if == 6:
         if action == 'r':
             return current_location + 1
@@ -489,7 +495,7 @@ def get_next_node(current_location, action):
         elif action == 'd':
             return current_location + 4
         else:
-            return -1
+            return current_location
     else:
         return -1
 
@@ -557,7 +563,7 @@ def main():
                 gpu = 20000
             ram = int(psutil.virtual_memory().free / (1024 ** 2))
             bw = 54
-            current_fec_state = FEC(gpu, ram, bw)
+            current_fec_state = FEC(gpu, ram, bw, getHwAddr('wlan0'))
         # /RESOURCES QUESTION
 
         # SCENARIO QUESTION
@@ -640,7 +646,8 @@ def main():
 
         control_socket.connect((host, port))
 
-        control_socket.send(json.dumps(dict(type="id", ip=general['my_ip'])).encode())
+        control_socket.send(json.dumps(dict(type="id", ip=general['my_ip'],
+                                            mac=getHwAddr(general['wlan_if_name']))).encode())
         response = json.loads(control_socket.recv(1024).decode())
         if response['res'] == 200:
             logger.info('[I] My ID is: ' + str(response['id']))
