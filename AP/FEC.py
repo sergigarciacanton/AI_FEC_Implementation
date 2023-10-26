@@ -42,7 +42,7 @@ class FEC:
 
 
 config = configparser.ConfigParser()
-config.read("fec_outdoor.ini")
+config.read("fec_annex.ini")
 general = config['general']
 scenario_if = 0
 locations = config['general']
@@ -496,6 +496,29 @@ def get_next_node(current_location, action):
             return current_location + 4
         else:
             return current_location
+    elif scenario_if == 7:
+        if action == 'r':
+            if current_location < 6:
+                return current_location - 1
+            elif current_location > 6:
+                return current_location + 1
+            else:
+                return current_location
+        elif action == 'l':
+            if current_location < 5:
+                return current_location + 1
+            elif current_location > 7:
+                return current_location - 1
+            else:
+                return current_location
+        elif action == 'u':
+            if 7 > current_location > 4:
+                return current_location + 1
+        elif action == 'd':
+            if 8 > current_location > 5:
+                return current_location - 1
+            else:
+                return current_location
     else:
         return -1
 
@@ -570,7 +593,7 @@ def main():
         valid = False
         while not valid:
             scenario_if = get_data_by_console(int, "[*] Choose which scenario to use (0 = No GPS use, 1 = 2_2, 2 = 2_4,"
-                                                   " 3 = 2_7d, 4 = 2_8, 5 = 4_12d, 6 = 4_16): (0) ")
+                                                   " 3 = 2_7d, 4 = 2_8, 5 = 4_12d, 6 = 4_16, 7 = str): (0) ")
             if scenario_if == 0:
                 logger.info('[I] Chose scenario: No GPS use')
                 locations = None
@@ -598,6 +621,10 @@ def main():
             elif scenario_if == 6:
                 logger.info('[I] Chose scenario: 4_16')
                 locations = config['4_16']
+                valid = True
+            elif scenario_if == 7:
+                logger.info('[I] Chose scenario: str')
+                locations = config['str']
                 valid = True
             else:
                 logger.warning('[!] Invalid scenario. Try again...')
