@@ -42,7 +42,7 @@ class FEC:
 
 
 config = configparser.ConfigParser()
-config.read("fec_annex.ini")
+config.read("fec_outdoor.ini")
 general = config['general']
 scenario_if = 0
 locations = config['general']
@@ -154,6 +154,320 @@ def manage_new_conn(mac):
         logger.debug('[D] No users connected')
 
 
+def get_action(target, curr_node):
+    global scenario_if
+    if scenario_if == 3:
+        if curr_node == 1:
+            if target != 3 and target != 6:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 2:
+            if target == 5 or target == 7:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 3:
+            if target != 1:
+                return 'r'
+            else:
+                return 'u'
+        elif curr_node == 4:
+            if target == 6:
+                return 'd'
+            elif target == 2:
+                return 'u'
+            elif target == 1 or target == 3:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 5:
+            if target != 7:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 6:
+            if target == 1 or target == 3:
+                return 'l'
+            else:
+                return 'u'
+        elif curr_node == 7:
+            if target == 2 or target == 5:
+                return 'u'
+            else:
+                return 'l'
+    elif scenario_if == 4:
+        if curr_node == 1:
+            if target != 5:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 2:
+            if target == 6:
+                return 'd'
+            elif target == 1 or target == 5:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 3:
+            if target == 7:
+                return 'd'
+            elif target == 4 or target == 8:
+                return 'r'
+            else:
+                return 'l'
+        elif curr_node == 4:
+            if target != 8:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 5:
+            if target != 1:
+                return 'r'
+            else:
+                return 'u'
+        elif curr_node == 6:
+            if target == 2:
+                return 'u'
+            elif target == 1 or target == 5:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 7:
+            if target == 3:
+                return 'u'
+            elif target == 4 or target == 8:
+                return 'r'
+            else:
+                return 'l'
+        elif curr_node == 8:
+            if target != 4:
+                return 'l'
+            else:
+                return 'u'
+    elif scenario_if == 5:
+        if curr_node == 1:
+            if target != 3 and target != 6 and target != 8 and target != 11:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 2:
+            if target == 5 or target == 7 or target == 10 or target == 12:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 3:
+            if target != 1:
+                return 'r'
+            else:
+                return 'u'
+        elif curr_node == 4:
+            if target == 6 or target == 8 or target == 9 or target == 11:
+                return 'd'
+            elif target == 2:
+                return 'u'
+            elif target == 1 or target == 3:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 5:
+            if target != 7 and target != 9 and target != 10 and target != 11 and target != 12:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 6:
+            if target == 1 or target == 3:
+                return 'l'
+            elif target == 8 or target == 11:
+                return 'd'
+            elif target == 2 or target == 4 or target == 5:
+                return 'u'
+            else:
+                return 'r'
+        elif curr_node == 7:
+            if target == 2 or target == 5:
+                return 'u'
+            elif target == 10 or target == 14:
+                return 'r'
+            elif target == 8 or target == 9 or target == 11:
+                return 'd'
+            else:
+                return 'l'
+        elif curr_node == 8:
+            if target != 9 and target != 10 and target != 11 and target != 12:
+                return 'u'
+            else:
+                return 'r'
+        elif curr_node == 9:
+            if target == 2 or target == 4 or target == 5 or target == 7:
+                return 'u'
+            elif target == 11:
+                return 'd'
+            elif target == 10 or target == 12:
+                return 'r'
+            else:
+                return 'l'
+        elif curr_node == 10:
+            if target != 10:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 11:
+            if target == 8:
+                return 'l'
+            else:
+                return 'u'
+        elif curr_node == 12:
+            if target == 1 or target == 2 or target == 4 or target == 5 or target == 7 or target == 10:
+                return 'u'
+            else:
+                return 'l'
+    elif scenario_if == 6:
+        if curr_node == 1:
+            if target != 5 and target != 9 and target != 13:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 2:
+            if target == 6 or target == 10 or target == 14:
+                return 'd'
+            elif target == 1 or target == 5 or target == 9 or target == 13:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 3:
+            if target == 7 or target == 11 or target == 15:
+                return 'd'
+            elif target == 4 or target == 8 or target == 12 or target == 16:
+                return 'r'
+            else:
+                return 'l'
+        elif curr_node == 4:
+            if target != 8 and target != 12 and target != 16:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 5:
+            if target == 1:
+                return 'u'
+            elif target == 9 or target == 13:
+                return 'd'
+            else:
+                return 'r'
+        elif curr_node == 6:
+            if target == 2 or target == 3:
+                return 'u'
+            elif target == 1 or target == 5 or target == 9:
+                return 'l'
+            elif target == 4 or target == 7 or target == 8 or target == 11 or target == 12:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node == 7:
+            if target == 2 or target == 3:
+                return 'u'
+            elif target == 4 or target == 8 or target == 12:
+                return 'r'
+            elif target == 1 or target == 5 or target == 6 or target == 9 or target == 10:
+                return 'l'
+            else:
+                return 'd'
+        elif curr_node == 8:
+            if target == 4:
+                return 'u'
+            elif target == 12 or target == 16:
+                return 'd'
+            else:
+                return 'l'
+        elif curr_node == 9:
+            if target == 13:
+                return 'd'
+            elif target == 1 or target == 5:
+                return 'u'
+            else:
+                return 'r'
+        elif curr_node == 10:
+            if target == 14 or target == 15:
+                return 'd'
+            elif target == 13 or target == 5 or target == 9:
+                return 'l'
+            elif target == 16 or target == 7 or target == 8 or target == 11 or target == 12:
+                return 'r'
+            else:
+                return 'u'
+        elif curr_node == 11:
+            if target == 14 or target == 15:
+                return 'd'
+            elif target == 16 or target == 8 or target == 12:
+                return 'r'
+            elif target == 13 or target == 5 or target == 6 or target == 9 or target == 10:
+                return 'l'
+            else:
+                return 'u'
+        elif curr_node == 12:
+            if target == 16:
+                return 'd'
+            elif target == 4 or target == 8:
+                return 'u'
+            else:
+                return 'l'
+        elif curr_node == 13:
+            if target != 5 and target != 9 and target != 1:
+                return 'r'
+            else:
+                return 'u'
+        elif curr_node == 14:
+            if target == 6 or target == 10 or target == 2:
+                return 'u'
+            elif target == 1 or target == 5 or target == 9 or target == 13:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 15:
+            if target == 7 or target == 11 or target == 3:
+                return 'u'
+            elif target == 4 or target == 8 or target == 12 or target == 16:
+                return 'r'
+            else:
+                return 'l'
+        elif curr_node == 16:
+            if target != 8 and target != 12 and target != 4:
+                return 'l'
+            else:
+                return 'u'
+    elif scenario_if == 7:
+        if curr_node < 5:
+            if target > curr_node:
+                return 'l'
+            else:
+                return 'r'
+        elif curr_node == 5:
+            if target > 5:
+                return 'u'
+            else:
+                return 'r'
+        elif curr_node == 6:
+            if target > 6:
+                return 'u'
+            else:
+                return 'd'
+        elif curr_node == 7:
+            if target > 7:
+                return 'r'
+            else:
+                return 'd'
+        elif curr_node > 7:
+            if target > curr_node:
+                return 'r'
+            else:
+                return 'l'
+    else:
+        if target > curr_node:
+            return 'r'
+        else:
+            return 'l'
+
+
 def serve_client(sock, ip):
     global current_fec_state
     global vnf_list
@@ -224,10 +538,7 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        if json_data['data']['target'] > json_data['data']['current_node']:
-                            action = 'r'
-                        else:
-                            action = 'l'
+                        action = get_action(json_data['data']['target'], json_data['data']['current_node'])
 
                         control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                         control_response = json.loads(control_socket.recv(1024).decode())
@@ -329,10 +640,7 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        if vnf_list[n]['target'] > json_data['data']['current_node']:
-                            action = 'r'
-                        else:
-                            action = 'l'
+                        action = get_action(vnf_list[n]['target'], json_data['data']['current_node'])
 
                         control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
                         control_response = json.loads(control_socket.recv(1024).decode())
