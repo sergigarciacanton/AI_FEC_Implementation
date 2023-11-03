@@ -568,8 +568,15 @@ def serve_client(sock, ip):
                                     current_fec_state.bw -= json_data['data']['bw']
                                 send_fec_message()
                                 if locations is not None:
+                                    k = 0
+                                    fec_mac = fec_list[0]['mac']
+                                    while k < len(fec_list):
+                                        if int(fec_list[k]['fec_id']) == next_fec:
+                                            fec_mac = fec_list[k]['mac']
+                                            break
+                                        k += 1
                                     sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                              next_fec=next_fec, fec_mac=fec_list[next_fec - 1]['mac'],
+                                                              next_fec=next_fec, fec_mac=fec_mac,
                                                               location=locations['point_'
                                                                                  + str(next_node)])).encode())
                                 else:
@@ -648,8 +655,15 @@ def serve_client(sock, ip):
                             if locations is not None:
                                 next_node = get_next_node(json_data['data']['current_node'], action)
                                 next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
+                                k = 0
+                                fec_mac = fec_list[0]['mac']
+                                while k < len(fec_list):
+                                    if int(fec_list[k]['fec_id']) == next_fec:
+                                        fec_mac = fec_list[k]['mac']
+                                        break
+                                    k += 1
                                 sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                          next_fec=next_fec, fec_mac=fec_list[next_fec - 1]['mac'],
+                                                          next_fec=next_fec, fec_mac=fec_mac,
                                                           location=locations['point_'
                                                                              + str(next_node)])).encode())
                             else:
