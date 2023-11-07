@@ -159,313 +159,313 @@ def get_action(target, curr_node):
     if scenario_if == 3:
         if curr_node == 1:
             if target != 3 and target != 6:
-                return 'r'
+                return 4
             else:
-                return 'd'
+                return 5
         elif curr_node == 2:
             if target == 5 or target == 7:
-                return 'r'
+                return 5
             else:
-                return 'd'
+                return 4
         elif curr_node == 3:
             if target != 1:
-                return 'r'
+                return 6
             else:
-                return 'u'
+                return 1
         elif curr_node == 4:
             if target == 6:
-                return 'd'
+                return 6
             elif target == 2:
-                return 'u'
+                return 2
             elif target == 1 or target == 3:
-                return 'l'
+                return 1
             else:
-                return 'r'
+                return 7
         elif curr_node == 5:
             if target != 7:
-                return 'l'
+                return 2
             else:
-                return 'd'
+                return 7
         elif curr_node == 6:
             if target == 1 or target == 3:
-                return 'l'
+                return 3
             else:
-                return 'u'
+                return 4
         elif curr_node == 7:
             if target == 2 or target == 5:
-                return 'u'
+                return 5
             else:
-                return 'l'
+                return 4
     elif scenario_if == 4:
         if curr_node == 1:
             if target != 5:
-                return 'r'
+                return 2
             else:
-                return 'd'
+                return 5
         elif curr_node == 2:
             if target == 6:
-                return 'd'
+                return 6
             elif target == 1 or target == 5:
-                return 'l'
+                return 1
             else:
-                return 'r'
+                return 3
         elif curr_node == 3:
             if target == 7:
-                return 'd'
+                return 7
             elif target == 4 or target == 8:
-                return 'r'
+                return 4
             else:
-                return 'l'
+                return 2
         elif curr_node == 4:
             if target != 8:
-                return 'l'
+                return 8
             else:
-                return 'd'
+                return 3
         elif curr_node == 5:
             if target != 1:
-                return 'r'
+                return 6
             else:
-                return 'u'
+                return 1
         elif curr_node == 6:
             if target == 2:
-                return 'u'
+                return 2
             elif target == 1 or target == 5:
-                return 'l'
+                return 5
             else:
-                return 'r'
+                return 7
         elif curr_node == 7:
             if target == 3:
-                return 'u'
+                return 3
             elif target == 4 or target == 8:
-                return 'r'
+                return 8
             else:
-                return 'l'
+                return 6
         elif curr_node == 8:
             if target != 4:
-                return 'l'
+                return 7
             else:
-                return 'u'
+                return 4
     elif scenario_if == 5:
         if curr_node == 1:
             if target != 3 and target != 6 and target != 8 and target != 11:
-                return 'r'
+                return 4
             else:
-                return 'd'
+                return 3
         elif curr_node == 2:
             if target == 5 or target == 7 or target == 10 or target == 12:
-                return 'r'
+                return 5
             else:
-                return 'd'
+                return 4
         elif curr_node == 3:
             if target != 1:
-                return 'r'
+                return 6
             else:
-                return 'u'
+                return 1
         elif curr_node == 4:
             if target == 6 or target == 8 or target == 9 or target == 11:
-                return 'd'
+                return 6
             elif target == 2:
-                return 'u'
+                return 2
             elif target == 1 or target == 3:
-                return 'l'
+                return 1
             else:
-                return 'r'
+                return 7
         elif curr_node == 5:
             if target != 7 and target != 9 and target != 10 and target != 11 and target != 12:
-                return 'l'
+                return 2
             else:
-                return 'd'
+                return 7
         elif curr_node == 6:
             if target == 1 or target == 3:
-                return 'l'
+                return 3
             elif target == 8 or target == 11:
-                return 'd'
+                return 8
             elif target == 2 or target == 4 or target == 5:
-                return 'u'
+                return 5
             else:
-                return 'r'
+                return 9
         elif curr_node == 7:
             if target == 2 or target == 5:
-                return 'u'
+                return 5
             elif target == 10 or target == 14:
-                return 'r'
+                return 10
             elif target == 8 or target == 9 or target == 11:
-                return 'd'
+                return 9
             else:
-                return 'l'
+                return 4
         elif curr_node == 8:
             if target != 9 and target != 10 and target != 11 and target != 12:
-                return 'u'
+                return 5
             else:
-                return 'r'
+                return 11
         elif curr_node == 9:
             if target == 2 or target == 4 or target == 5 or target == 7:
-                return 'u'
+                return 7
             elif target == 11:
-                return 'd'
+                return 11
             elif target == 10 or target == 12:
-                return 'r'
+                return 12
             else:
-                return 'l'
+                return 6
         elif curr_node == 10:
-            if target != 10:
-                return 'l'
+            if target != 12:
+                return 5
             else:
-                return 'd'
+                return 12
         elif curr_node == 11:
             if target == 8:
-                return 'l'
+                return 8
             else:
-                return 'u'
+                return 9
         elif curr_node == 12:
             if target == 1 or target == 2 or target == 4 or target == 5 or target == 7 or target == 10:
-                return 'u'
+                return 10
             else:
-                return 'l'
+                return 9
     elif scenario_if == 6:
         if curr_node == 1:
             if target != 5 and target != 9 and target != 13:
-                return 'r'
+                return 2
             else:
-                return 'd'
+                return 5
         elif curr_node == 2:
             if target == 6 or target == 10 or target == 14:
-                return 'd'
+                return 6
             elif target == 1 or target == 5 or target == 9 or target == 13:
-                return 'l'
+                return 1
             else:
-                return 'r'
+                return 3
         elif curr_node == 3:
             if target == 7 or target == 11 or target == 15:
-                return 'd'
+                return 7
             elif target == 4 or target == 8 or target == 12 or target == 16:
-                return 'r'
+                return 4
             else:
-                return 'l'
+                return 2
         elif curr_node == 4:
             if target != 8 and target != 12 and target != 16:
-                return 'l'
+                return 3
             else:
-                return 'd'
+                return 8
         elif curr_node == 5:
             if target == 1:
-                return 'u'
+                return 1
             elif target == 9 or target == 13:
-                return 'd'
+                return 9
             else:
-                return 'r'
+                return 6
         elif curr_node == 6:
             if target == 2 or target == 3:
-                return 'u'
+                return 2
             elif target == 1 or target == 5 or target == 9:
-                return 'l'
+                return 5
             elif target == 4 or target == 7 or target == 8 or target == 11 or target == 12:
-                return 'r'
+                return 7
             else:
-                return 'd'
+                return 10
         elif curr_node == 7:
             if target == 2 or target == 3:
-                return 'u'
+                return 3
             elif target == 4 or target == 8 or target == 12:
-                return 'r'
+                return 8
             elif target == 1 or target == 5 or target == 6 or target == 9 or target == 10:
-                return 'l'
+                return 6
             else:
-                return 'd'
+                return 11
         elif curr_node == 8:
             if target == 4:
-                return 'u'
+                return 4
             elif target == 12 or target == 16:
-                return 'd'
+                return 12
             else:
-                return 'l'
+                return 7
         elif curr_node == 9:
             if target == 13:
-                return 'd'
+                return 13
             elif target == 1 or target == 5:
-                return 'u'
+                return 5
             else:
-                return 'r'
+                return 10
         elif curr_node == 10:
             if target == 14 or target == 15:
-                return 'd'
+                return 14
             elif target == 13 or target == 5 or target == 9:
-                return 'l'
+                return 9
             elif target == 16 or target == 7 or target == 8 or target == 11 or target == 12:
-                return 'r'
+                return 11
             else:
-                return 'u'
+                return 6
         elif curr_node == 11:
             if target == 14 or target == 15:
-                return 'd'
+                return 15
             elif target == 16 or target == 8 or target == 12:
-                return 'r'
+                return 12
             elif target == 13 or target == 5 or target == 6 or target == 9 or target == 10:
-                return 'l'
+                return 10
             else:
-                return 'u'
+                return 7
         elif curr_node == 12:
             if target == 16:
-                return 'd'
+                return 16
             elif target == 4 or target == 8:
-                return 'u'
+                return 8
             else:
-                return 'l'
+                return 11
         elif curr_node == 13:
             if target != 5 and target != 9 and target != 1:
-                return 'r'
+                return 14
             else:
-                return 'u'
+                return 9
         elif curr_node == 14:
             if target == 6 or target == 10 or target == 2:
-                return 'u'
+                return 10
             elif target == 1 or target == 5 or target == 9 or target == 13:
-                return 'l'
+                return 13
             else:
-                return 'r'
+                return 15
         elif curr_node == 15:
             if target == 7 or target == 11 or target == 3:
-                return 'u'
+                return 11
             elif target == 4 or target == 8 or target == 12 or target == 16:
-                return 'r'
+                return 16
             else:
-                return 'l'
+                return 14
         elif curr_node == 16:
             if target != 8 and target != 12 and target != 4:
-                return 'l'
+                return 15
             else:
-                return 'u'
+                return 12
     elif scenario_if == 7:
         if curr_node < 5:
             if target > curr_node:
-                return 'l'
+                return curr_node + 1
             else:
-                return 'r'
+                return curr_node - 1
         elif curr_node == 5:
             if target > 5:
-                return 'u'
+                return 6
             else:
-                return 'r'
+                return 4
         elif curr_node == 6:
             if target > 6:
-                return 'u'
+                return 7
             else:
-                return 'd'
+                return 5
         elif curr_node == 7:
             if target > 7:
-                return 'r'
+                return 8
             else:
-                return 'd'
+                return 6
         elif curr_node > 7:
             if target > curr_node:
-                return 'r'
+                return curr_node + 1
             else:
-                return 'l'
+                return curr_node - 1
     else:
         if target > curr_node:
-            return 'r'
+            return curr_node + 1
         else:
-            return 'l'
+            return curr_node - 1
 
 
 def serve_client(sock, ip):
@@ -538,7 +538,7 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        action = get_action(json_data['data']['target'], json_data['data']['current_node'])
+                        next_node = get_action(json_data['data']['target'], json_data['data']['current_node'])
 
                         control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                         control_response = json.loads(control_socket.recv(1024).decode())
@@ -553,8 +553,8 @@ def serve_client(sock, ip):
                                 logger.error('[!] Trying to assign resources to unknown user!')
                                 sock.send(json.dumps(dict(res=404)).encode())
                             else:
-                                next_node = get_next_node(json_data['data']['current_node'], action)
-                                cav_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
+                                cav_fec = int(locations['point_' + str(json_data['data']['current_node'])
+                                                        + '_' + str(next_node)])
                                 j = 0
                                 while j < len(vnf_list):
                                     if vnf_list[j]['user_id'] == connections[i].user_id:
@@ -575,17 +575,16 @@ def serve_client(sock, ip):
                                             fec_mac = fec_list[k]['mac']
                                             break
                                         k += 1
-                                    sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                               cav_fec=cav_fec, fec_mac=fec_mac,
                                                               location=locations['point_'
                                                                                  + str(next_node)])).encode())
                                 else:
-                                    sock.send(json.dumps(dict(res=200, action=action)).encode())
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                         else:
                             sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                 else:
                     # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
-                    action = 'e'
                     i = 0
                     while i < len(connections):
                         if connections[i].sock == sock:
@@ -616,8 +615,7 @@ def serve_client(sock, ip):
                             current_fec_state.bw += vnf_list[j]['bw']
                             send_fec_message()
 
-                        next_node = json_data['data']['current_node']
-                        sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                        sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
             except ValueError:
                 sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
             except IndexError:
@@ -649,14 +647,14 @@ def serve_client(sock, ip):
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
-                        action = get_action(vnf_list[n]['target'], json_data['data']['current_node'])
+                        next_node = get_action(vnf_list[n]['target'], json_data['data']['current_node'])
 
                         control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
                         control_response = json.loads(control_socket.recv(1024).decode())
                         if control_response['res'] == 200:
                             if locations is not None:
-                                next_node = get_next_node(json_data['data']['current_node'], action)
-                                cav_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
+                                cav_fec = int(locations['point_' + str(json_data['data']['current_node'])
+                                                        + '_' + str(next_node)])
                                 k = 0
                                 fec_mac = fec_list[0]['mac']
                                 while k < len(fec_list):
@@ -664,18 +662,16 @@ def serve_client(sock, ip):
                                         fec_mac = fec_list[k]['mac']
                                         break
                                     k += 1
-                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
+                                sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                           cav_fec=cav_fec, fec_mac=fec_mac,
                                                           location=locations['point_'
                                                                              + str(next_node)])).encode())
                             else:
-                                next_node = get_next_node(json_data['data']['current_node'], action)
-                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                                sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                         else:
                             sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                     else:
                         # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
-                        action = 'e'
                         i = 0
                         while i < len(connections):
                             if connections[i].sock == sock:
@@ -708,8 +704,7 @@ def serve_client(sock, ip):
                             control_socket.send(json.dumps(dict(type="vnf", data=vnf_list[n])).encode())
                             control_response = json.loads(control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
-                                next_node = json_data['data']['current_node']
-                                sock.send(json.dumps(dict(res=200, action=action, next_node=next_node)).encode())
+                                sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
                             else:
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
             except ValueError:
@@ -735,7 +730,7 @@ def serve_client(sock, ip):
                 break
             else:
                 j += 1
-        if j < len(vnf_list) and vnf_list[j]['previous_node'] != -1:
+        if j < len(vnf_list) and vnf_list[j]['previous_node'] != vnf_list[j]['current_node']:
             current_fec_state.ram += vnf_list[j]['ram']
             current_fec_state.gpu += vnf_list[j]['gpu']
             current_fec_state.bw += vnf_list[j]['bw']
@@ -788,63 +783,6 @@ def subscribe(conn, key_string):
 
 
 subscribe_thread = threading.Thread(target=subscribe, args=(rabbit_conn, 'fec vnf'))
-
-
-def get_next_node(current_location, action):
-    if scenario_if == 1 or scenario_if == 2:
-        if action == 'r':
-            return current_location + 1
-        elif action == 'l':
-            return current_location - 1
-        else:
-            return current_location
-    elif scenario_if == 3 or scenario_if == 5:
-        if action == 'r':
-            return current_location + 3
-        elif action == 'l':
-            return current_location - 3
-        elif action == 'u':
-            return current_location - 2
-        elif action == 'd':
-            return current_location + 2
-        else:
-            return current_location
-    elif scenario_if == 4 or scenario_if == 6:
-        if action == 'r':
-            return current_location + 1
-        elif action == 'l':
-            return current_location - 1
-        elif action == 'u':
-            return current_location - 4
-        elif action == 'd':
-            return current_location + 4
-        else:
-            return current_location
-    elif scenario_if == 7:
-        if action == 'r':
-            if current_location < 6:
-                return current_location - 1
-            elif current_location > 6:
-                return current_location + 1
-            else:
-                return current_location
-        elif action == 'l':
-            if current_location < 5:
-                return current_location + 1
-            elif current_location > 7:
-                return current_location - 1
-            else:
-                return current_location
-        elif action == 'u':
-            if 7 > current_location > 4:
-                return current_location + 1
-        elif action == 'd':
-            if 8 > current_location > 5:
-                return current_location - 1
-            else:
-                return current_location
-    else:
-        return -1
 
 
 def kill_thread(thread_id):
