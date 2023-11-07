@@ -534,7 +534,7 @@ def serve_client(sock, ip):
                         #                     bw=json_data['data']['bw'],
                         #                     previous_node=json_data['data']['previous_node'],
                         #                     current_node=json_data['data']['current_node'],
-                        #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                        #                     cav_fec=json_data['data']['cav_fec'], fec_a_res=fec_list[0],
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
@@ -554,14 +554,14 @@ def serve_client(sock, ip):
                                 sock.send(json.dumps(dict(res=404)).encode())
                             else:
                                 next_node = get_next_node(json_data['data']['current_node'], action)
-                                next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
+                                cav_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                 j = 0
                                 while j < len(vnf_list):
                                     if vnf_list[j]['user_id'] == connections[i].user_id:
                                         break
                                     else:
                                         j += 1
-                                if j == len(vnf_list) and next_fec == my_fec_id:
+                                if j == len(vnf_list) and cav_fec == my_fec_id:
                                     logger.info('[I] Assigning resources for ' + ip + '...')
                                     current_fec_state.ram -= json_data['data']['ram']
                                     current_fec_state.gpu -= json_data['data']['gpu']
@@ -571,12 +571,12 @@ def serve_client(sock, ip):
                                     k = 0
                                     fec_mac = fec_list[0]['mac']
                                     while k < len(fec_list):
-                                        if int(fec_list[k]['fec_id']) == next_fec:
+                                        if int(fec_list[k]['fec_id']) == cav_fec:
                                             fec_mac = fec_list[k]['mac']
                                             break
                                         k += 1
                                     sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                              next_fec=next_fec, fec_mac=fec_mac,
+                                                              cav_fec=cav_fec, fec_mac=fec_mac,
                                                               location=locations['point_'
                                                                                  + str(next_node)])).encode())
                                 else:
@@ -636,14 +636,16 @@ def serve_client(sock, ip):
                 else:
                     vnf_list[n]['previous_node'] = json_data['data']['previous_node']
                     vnf_list[n]['current_node'] = json_data['data']['current_node']
-                    vnf_list[n]['fec_linked'] = json_data['data']['fec_linked']
+                    vnf_list[n]['cav_fec'] = json_data['data']['cav_fec']
+                    vnf_list[n]['time_steps'] = json_data['data']['time_steps']
                     if vnf_list[n]['target'] != json_data['data']['current_node']:
+                        send_fec_message()
                         # state_vector = dict(source=json_data['data']['source'], target=json_data['data']['target'],
                         #                     gpu=json_data['data']['gpu'], ram=json_data['data']['ram'],
                         #                     bw=json_data['data']['bw'],
                         #                     previous_node=json_data['data']['previous_node'],
                         #                     current_node=json_data['data']['current_node'],
-                        #                     fec_linked=json_data['data']['fec_linked'], fec_a_res=fec_list[0],
+                        #                     cav_fec=json_data['data']['cav_fec'], fec_a_res=fec_list[0],
                         #                     fec_b_res=fec_list[1])
                         # logger.debug('[D] State vector to send to Model plane: ' + str(state_vector))
                         # MODEL PLANE: GET ACTION
@@ -654,16 +656,16 @@ def serve_client(sock, ip):
                         if control_response['res'] == 200:
                             if locations is not None:
                                 next_node = get_next_node(json_data['data']['current_node'], action)
-                                next_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
+                                cav_fec = int(locations['point_'+str(json_data['data']['current_node'])+'_'+action])
                                 k = 0
                                 fec_mac = fec_list[0]['mac']
                                 while k < len(fec_list):
-                                    if int(fec_list[k]['fec_id']) == next_fec:
+                                    if int(fec_list[k]['fec_id']) == cav_fec:
                                         fec_mac = fec_list[k]['mac']
                                         break
                                     k += 1
                                 sock.send(json.dumps(dict(res=200, action=action, next_node=next_node,
-                                                          next_fec=next_fec, fec_mac=fec_mac,
+                                                          cav_fec=cav_fec, fec_mac=fec_mac,
                                                           location=locations['point_'
                                                                              + str(next_node)])).encode())
                             else:
