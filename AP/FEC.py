@@ -935,7 +935,7 @@ def main():
 
         control_socket.connect((host, port))
 
-        control_socket.send(json.dumps(dict(type="id", ip=general['my_ip'],
+        control_socket.send(json.dumps(dict(type="id", ip=control_socket.getsockname()[0],
                                             mac=getHwAddr(general['wlan_if_name']))).encode())
         response = json.loads(control_socket.recv(1024).decode())
         if response['res'] == 200:
