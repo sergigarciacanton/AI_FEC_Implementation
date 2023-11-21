@@ -436,11 +436,17 @@ class FEC:
                     self.control_socket.send(json.dumps(dict(type="auth", user_id=json_data['user_id'])).encode())
                     control_response = json.loads(self.control_socket.recv(1024).decode())
                     if control_response['res'] == 200:
-                        self.connections.append(dict(user_id=int(json_data['user_id']),
-                                                     sock=sock,
-                                                     mac=subprocess.check_output(['arp', '-n', ip]).decode().split('\n')
-                                                     [1].split()[2],
-                                                     ip=ip))
+                        if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                            self.connections.append(dict(user_id=int(json_data['user_id']),
+                                                         sock=sock,
+                                                         mac=subprocess.check_output(['arp', '-n', ip]).decode().split('\n')
+                                                         [1].split()[2],
+                                                         ip=ip))
+
+                        else:
+                            self.connections.append(dict(user_id=int(json_data['user_id']),
+                                                         sock=sock,
+                                                         ip=ip))
                         self.current_state['connected_users'].append(json_data['user_id'])
                         k = 0
                         while k < len(self.connections):
@@ -510,20 +516,37 @@ class FEC:
                                         self.current_state['gpu'] -= json_data['data']['gpu']
                                         self.current_state['bw'] -= json_data['data']['bw']
                                     self.send_fec_message()
-                                    if self.locations is not None:
-                                        k = 0
-                                        fec_mac = self.fec_list[0]['mac']
-                                        while k < len(self.fec_list):
-                                            if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                                fec_mac = self.fec_list[k]['mac']
-                                                break
-                                            k += 1
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                  cav_fec=cav_fec, fec_mac=fec_mac,
-                                                                  location=self.locations['point_'
-                                                                                     + str(next_node)])).encode())
+
+                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                                        if self.locations is not None:
+                                            k = 0
+                                            fec_mac = self.fec_list[0]['mac']
+                                            while k < len(self.fec_list):
+                                                if int(self.fec_list[k]['fec_id']) == cav_fec:
+                                                    fec_mac = self.fec_list[k]['mac']
+                                                    break
+                                                k += 1
+                                            sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                      cav_fec=cav_fec, fec_mac=fec_mac,
+                                                                      location=self.locations['point_'
+                                                                                         + str(next_node)])).encode())
+                                        else:
+                                            sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                                     else:
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
+                                        if self.locations is not None:
+                                            k = 0
+                                            fec_ip = self.fec_list[0]['ip']
+                                            while k < len(self.fec_list):
+                                                if int(self.fec_list[k]['fec_id']) == cav_fec:
+                                                    fec_ip = self.fec_list[k]['ip']
+                                                    break
+                                                k += 1
+                                            sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                      cav_fec=cav_fec, fec_ip=fec_ip,
+                                                                      location=self.locations['point_'
+                                                                                         + str(next_node)])).encode())
+                                        else:
+                                            sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                             else:
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                     else:
@@ -591,16 +614,28 @@ class FEC:
                                     cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                                             + '_' + str(next_node)])
                                     k = 0
-                                    fec_mac = self.fec_list[0]['mac']
-                                    while k < len(self.fec_list):
-                                        if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                            fec_mac = self.fec_list[k]['mac']
-                                            break
-                                        k += 1
-                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                              cav_fec=cav_fec, fec_mac=fec_mac,
-                                                              location=self.locations['point_'
-                                                                                 + str(next_node)])).encode())
+                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                                        fec_mac = self.fec_list[0]['mac']
+                                        while k < len(self.fec_list):
+                                            if int(self.fec_list[k]['fec_id']) == cav_fec:
+                                                fec_mac = self.fec_list[k]['mac']
+                                                break
+                                            k += 1
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec, fec_mac=fec_mac,
+                                                                  location=self.locations['point_'
+                                                                                     + str(next_node)])).encode())
+                                    else:
+                                        fec_ip = self.fec_list[0]['ip']
+                                        while k < len(self.fec_list):
+                                            if int(self.fec_list[k]['fec_id']) == cav_fec:
+                                                fec_ip = self.fec_list[k]['ip']
+                                                break
+                                            k += 1
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec, fec_ip=fec_ip,
+                                                                  location=self.locations['point_'
+                                                                                          + str(next_node)])).encode())
                                 else:
                                     sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                             else:
@@ -825,41 +860,41 @@ class FEC:
                 connection['sock'].close()
             if general['training_if'] == 'n':
                 self.access_point.stop()
+                logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
             time.sleep(3)
             if general['training_if'] != 'n':
                 os.system('sudo systemctl start systemd-resolved')
-            logger.info("[I] AP stopped.")
         except OSError:
             logger.critical("[!] Error when binding address and port for server! Stopping...")
             stop = True
             if general['training_if'] == 'n':
                 self.access_point.stop()
+                logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
             time.sleep(3)
             if general['training_if'] != 'n':
                 os.system('sudo systemctl start systemd-resolved')
-            logger.info("[I] AP stopped.")
         except TypeError:
             logger.critical("[!] Detected error in value type at one variable! Stopping...")
             stop = True
             if general['training_if'] == 'n':
                 self.access_point.stop()
+                logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
             time.sleep(3)
             if general['training_if'] != 'n':
                 os.system('sudo systemctl start systemd-resolved')
-            logger.info("[I] AP stopped.")
         except ValueError:
             logger.critical("[!] Detected error in value at one variable! Stopping...")
             stop = True
             if general['training_if'] == 'n':
                 self.access_point.stop()
+                logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
             time.sleep(3)
             if general['training_if'] != 'n':
                 os.system('sudo systemctl start systemd-resolved')
-            logger.info("[I] AP stopped.")
         except Exception as e:
             logger.exception(e)
             stop = True
@@ -869,7 +904,6 @@ class FEC:
             time.sleep(3)
             if general['training_if'] != 'n':
                 os.system('sudo systemctl start systemd-resolved')
-            logger.info("[I] AP stopped.")
 
 
 if __name__ == '__main__':
