@@ -31,6 +31,7 @@ class FEC:
         self.rabbit_conn = rabbit_conn
         self.subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
         self.locations = locations
+        self.next_action = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
 
     def get_mac_address(self, if_name):
@@ -53,6 +54,40 @@ class FEC:
         else:
             logger.error('[!] Data type getter not implemented!')
         return output
+
+    def agent_conn(self):
+        host = self.control_socket.getsockname()[0]
+        port = int(general['agent_port'])
+
+        server_socket = socket.socket()  # Create socket
+        server_socket.bind((host, port))  # Bind IP address and port together
+
+        # Configure how many client the server can listen simultaneously
+        server_socket.listen(1)
+
+        # Infinite loop listening for new connections
+        while True:
+            conn, address = server_socket.accept()  # Accept new connection
+            while True:
+                if stop:
+                    break
+                data = conn.recv(
+                    1024).decode()  # Receive data stream. it won't accept data packet greater than 1024 bytes
+                if not data:
+                    break  # If data is not received break
+
+                logger.info("[I] From agent " + str(address) + ": " + str(data))
+                json_data = json.loads(data)
+
+                if json_data['type'] == 'action':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
+                    try:
+                        self.next_action = json_data['action']
+                        conn.send(json.dumps(dict(res=200, id=self.id)).encode())  # Action saved
+                    except ValueError:
+                        conn.send(json.dumps(dict(res=404)).encode())  # Wrong query format
+                else:
+                    conn.send(json.dumps(dict(res=400)).encode())  # Bad request
+            conn.close()  # Close the connection
 
     def listen_new_conn(self):
         while not stop:
@@ -486,9 +521,6 @@ class FEC:
                                 self.locations['max_point']):
                             sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
                         else:
-                            # MODEL PLANE: GET ACTION
-                            next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
-
                             self.control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
                             control_response = json.loads(self.control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
@@ -502,6 +534,14 @@ class FEC:
                                     logger.error('[!] Trying to assign resources to unknown user!')
                                     sock.send(json.dumps(dict(res=404)).encode())
                                 else:
+                                    # MODEL PLANE: GET ACTION
+                                    if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
+                                        while self.next_action is None:
+                                            time.sleep(0.001)
+                                        next_node = self.next_action
+                                        self.next_action = None
+                                    else:
+                                        next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
                                     cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                                             + '_' + str(next_node)])
                                     j = 0
@@ -604,13 +644,18 @@ class FEC:
                         self.vnf_list[n]['time_steps'] = json_data['data']['time_steps']
                         if self.vnf_list[n]['target'] != json_data['data']['current_node']:
                             self.send_fec_message()
-                            # MODEL PLANE: GET ACTION
-                            next_node = self.get_action(self.vnf_list[n]['target'], json_data['data']['current_node'])
-
                             self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
                             control_response = json.loads(self.control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
                                 if self.locations is not None:
+                                    # MODEL PLANE: GET ACTION
+                                    if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
+                                        while self.next_action is None:
+                                            time.sleep(0.001)
+                                        next_node = self.next_action
+                                        self.next_action = None
+                                    else:
+                                        next_node = self.get_action(self.vnf_list[n]['target'], json_data['data']['current_node'])
                                     cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                                             + '_' + str(next_node)])
                                     k = 0
@@ -670,8 +715,10 @@ class FEC:
                                     self.current_state['ram'] += self.vnf_list[j]['ram']
                                     self.current_state['gpu'] += self.vnf_list[j]['gpu']
                                     self.current_state['bw'] += self.vnf_list[j]['bw']
+                                    self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
                                     self.send_fec_message()
-                                self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
+                                else:
+                                    self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
                                 control_response = json.loads(self.control_socket.recv(1024).decode())
                                 if control_response['res'] == 200:
                                     sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
@@ -770,8 +817,7 @@ class FEC:
 
             # WIRESHARK & TSHARK QUESTION
             wireshark_if = wireshark_if.lower()
-            if wireshark_if != "y" and wireshark_if != "":
-                tshark_if = tshark_if.lower()
+            tshark_if = tshark_if.lower()
             # /WIRESHARK & TSHARK QUESTION
 
             # RESOURCES QUESTION
@@ -795,12 +841,20 @@ class FEC:
                 self.access_point.start()
             if wireshark_if == "y" or wireshark_if == "":
                 logger.info("[I] Starting Wireshark...")
-                os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
-                          + script_path + "logs/ap-wireshark.pcap")
+                if general['training_if'] == 'n':
+                    os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
+                            + script_path + "logs/ap-wireshark.pcap")
+                else:
+                    os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['eth_if_name'] + " -k -w "
+                            + script_path + "logs/ap-wireshark.pcap")
             if tshark_if == "y" or tshark_if == "":
                 logger.info("[I] Starting Tshark...")
-                os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
-                          "logs/ap-tshark.pcap")
+                if general['training_if'] == 'n':
+                    os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
+                            "logs/ap-tshark.pcap")
+                else:
+                    os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['eth_if_name'] + " -w " + script_path +
+                            "logs/ap-tshark.pcap")
             # /START AP
 
             time.sleep(5)
@@ -825,6 +879,11 @@ class FEC:
                 logger.critical('[!] Error from Control' + str(response['res']))
                 raise Exception
             self.send_fec_message()
+
+            if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
+                agent_conn_thread = threading.Thread(target=self.agent_conn)
+                agent_conn_thread.daemon = True
+                agent_conn_thread.start()
 
             # Server's IP and port
             if general['training_if'] == 'n':
