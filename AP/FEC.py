@@ -84,6 +84,7 @@ class FEC:
                         self.next_action = json_data['action']
                         conn.send(json.dumps(dict(res=200, id=self.id)).encode())  # Action saved
                     except ValueError:
+                        logger.error('[!] ValueError when receiving action from agent: json_data = ' + str(json_data))
                         conn.send(json.dumps(dict(res=404)).encode())  # Wrong query format
                 else:
                     conn.send(json.dumps(dict(res=400)).encode())  # Bad request
@@ -498,17 +499,22 @@ class FEC:
                                     m += 1
                             if m != len(self.vnf_list):
                                 logger.info('[I] Assigning resources for ' + ip + '...')
+                                print('Before assigning: ' + str(self.current_state))
                                 self.current_state['ram'] -= self.vnf_list[m]['ram']
                                 self.current_state['gpu'] -= self.vnf_list[m]['gpu']
                                 self.current_state['bw'] -= self.vnf_list[m]['bw']
+                                print('After assigning: ' + str(self.current_state))
                         self.send_fec_message()
                         if self.id == -1:
+                            logger.error('[!] FEC not connected to control!')
                             sock.send(json.dumps(dict(res=500)).encode())  # FEC not connected to Control
                         else:
                             sock.send(json.dumps(dict(res=200, id=self.id)).encode())  # Access granted
                     else:
+                        logger.error('[!] Error from control when authenticating a CAV: ' + str(control_response))
                         sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
-                except ValueError:
+                except ValueError as e:
+                    logger.error('[!] ValueError at FEC when assigning resources during auth: ' + str(e))
                     sock.send(json.dumps(dict(res=404)).encode())  # Wrong query format
             elif json_data['type'] == 'vnf':
                 try:
@@ -519,6 +525,7 @@ class FEC:
                             sock.send(json.dumps(dict(res=403)).encode())  # Asked for unavailable resources
                         elif json_data['data']['target'] < 1 or json_data['data']['target'] > int(
                                 self.locations['max_point']):
+                            logger.error('[!] Error: target does not exist! json_data = ' + str(json_data))
                             sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
                         else:
                             self.control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
@@ -550,11 +557,13 @@ class FEC:
                                             break
                                         else:
                                             j += 1
-                                    if j == len(self.vnf_list) and cav_fec == self.id:
+                                    if cav_fec == self.id:
                                         logger.info('[I] Assigning resources for ' + ip + '...')
+                                        print('Before assigning: ' + str(self.current_state))
                                         self.current_state['ram'] -= json_data['data']['ram']
                                         self.current_state['gpu'] -= json_data['data']['gpu']
                                         self.current_state['bw'] -= json_data['data']['bw']
+                                        print('After assigning: ' + str(self.current_state))
                                     self.send_fec_message()
 
                                     if general['training_if'] != 'y' and general['training_if'] != 'Y':
@@ -588,6 +597,7 @@ class FEC:
                                         else:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                             else:
+                                logger.error('[!] Error from control: ' + str(control_response['res']))
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                     else:
                         # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
@@ -616,15 +626,21 @@ class FEC:
                                         break
                                     else:
                                         j += 1
+                                print('Before releasing: ' + str(self.current_state))
                                 self.current_state['ram'] += self.vnf_list[j]['ram']
                                 self.current_state['gpu'] += self.vnf_list[j]['gpu']
                                 self.current_state['bw'] += self.vnf_list[j]['bw']
+                                print('After releasing: ' + str(self.current_state))
                                 self.send_fec_message()
 
                             sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
-                except ValueError:
+                except ValueError as e:
+                    logger.error('[!] ValueError at FEC when receiving VNF: ' + str(e))
                     sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
-                except IndexError:
+                except IndexError as e:
+                    logger.error('[!] IndexError at FEC when receiving VNF: ' + str(e) + '. vnf_list = '
+                                 + str(self.vnf_list) + '. connections = ' + str(self.connections) + '. json_data = '
+                                 + str(json_data) + '. fec_list = ' + str(self.fec_list))
                     sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
             elif json_data['type'] == 'state':
                 try:
@@ -684,6 +700,7 @@ class FEC:
                                 else:
                                     sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                             else:
+                                logger.error('[!] Error from control: ' + str(control_response['res']))
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                         else:
                             # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
@@ -705,6 +722,7 @@ class FEC:
                                         m += 1
                                 if m != len(self.vnf_list):
                                     logger.info('[I] Releasing resources from ' + ip + '...')
+                                    print('Before releasing: ' + str(self.current_state))
 
                                     j = 0
                                     while j < len(self.vnf_list):
@@ -715,58 +733,70 @@ class FEC:
                                     self.current_state['ram'] += self.vnf_list[j]['ram']
                                     self.current_state['gpu'] += self.vnf_list[j]['gpu']
                                     self.current_state['bw'] += self.vnf_list[j]['bw']
+                                    print('After releasing: ' + str(self.current_state))
                                     self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
-                                    self.send_fec_message()
                                 else:
                                     self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
                                 control_response = json.loads(self.control_socket.recv(1024).decode())
                                 if control_response['res'] == 200:
+                                    self.send_fec_message()
                                     sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
                                 else:
+                                    logger.error('[!] Error from control when sending ended VNF: '
+                                                 + str(control_response['res']))
                                     sock.send(
                                         json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                 except ValueError:
+                    logger.error('[!] ValueError at FEC when updating CAV status: ' + str(e))
                     sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
                 except IndexError as e:
+                    logger.error('[!] IndexError at FEC when updating CAV status: ' + str(e))
                     sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
             elif json_data['type'] == 'bye':  # Disconnect. Format: {"type": "bye"}
                 break
             else:
                 sock.send(json.dumps(dict(res=400)).encode())  # Bad request
 
-        found = False
-        i = 0
-        while not found and i < len(self.connections):
-            if self.connections[i]['sock'] == sock:
-                found = True
-            else:
-                i += 1
-        if found:
-            j = 0
-            while j < len(self.vnf_list):
-                if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
-                    break
+        try:
+            found = False
+            i = 0
+            while not found and i < len(self.connections):
+                if self.connections[i]['sock'] == sock:
+                    found = True
                 else:
-                    j += 1
-            if j < len(self.vnf_list) and self.vnf_list[j]['previous_node'] != self.vnf_list[j]['current_node']:
-                self.current_state['ram'] += self.vnf_list[j]['ram']
-                self.current_state['gpu'] += self.vnf_list[j]['gpu']
-                self.current_state['bw'] += self.vnf_list[j]['bw']
-                logger.info('[I] Releasing resources from ' + ip + '...')
-            logger.info('[I] User ' + ip + ' disconnected.')
-            self.current_state['connected_users'].remove(self.connections[i]['user_id'])
-            self.send_fec_message()
-            self.connections.pop(i)
-        else:
-            logger.error('[!] Disconnected unknown valid user!')
-        sock.close()  # Close the connection
+                    i += 1
+            if found:
+                j = 0
+                while j < len(self.vnf_list):
+                    if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
+                        break
+                    else:
+                        j += 1
+                if j < len(self.vnf_list) and self.vnf_list[j]['previous_node'] != self.vnf_list[j]['current_node']\
+                        and self.vnf_list[j]['current_node'] != self.vnf_list[j]['target']:
+                    print('Before releasing: ' + str(self.current_state))
+                    self.current_state['ram'] += self.vnf_list[j]['ram']
+                    self.current_state['gpu'] += self.vnf_list[j]['gpu']
+                    self.current_state['bw'] += self.vnf_list[j]['bw']
+                    print('After releasing: ' + str(self.current_state))
+                    logger.info('[I] Releasing resources from ' + ip + '...')
+                logger.info('[I] User ' + ip + ' disconnected.')
+                self.current_state['connected_users'].remove(self.connections[i]['user_id'])
+                self.connections.pop(i)
+                self.send_fec_message()
+            else:
+                logger.error('[!] Disconnected unknown valid user!')
+            sock.send(json.dumps(dict(res=200)).encode())
+            sock.close()  # Close the connection
+        except IndexError as e:
+            logger.error('[!] IndexError when disconnecting CAV from FEC: ' + str(e) + '. connections = ' + str(self.connections))
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
         self.control_socket.send(json.dumps(dict(type="fec", data=self.current_state)).encode())
         response = json.loads(self.control_socket.recv(1024).decode())
         if response['res'] != 200:
-            logger.error('[!] Error from Control:' + response['res'])
+            logger.error('[!] Error from Control when sending FEC message:' + str(response['res']))
 
     def subscribe(self, conn, key_string):
         channel = conn.channel()
