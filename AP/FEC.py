@@ -21,12 +21,12 @@ class FEC:
     def __init__(self, gpu, ram, bw, access_point, rabbit_conn, locations):
         self.id = None
         self.ip = None
-        self.current_state = dict(gpu=gpu, ram=ram, bw=bw, mac=self.get_mac_address(general['wlan_if_name']),
-                                  connected_users=[])
+        self.current_state = {"gpu": gpu, "ram": ram, "bw": bw, "mac": self.get_mac_address(general['wlan_if_name']),
+                                  "connected_users": []}
         self.control_socket = socket.socket()
-        self.connections = []
-        self.fec_list = []
-        self.vnf_list = []
+        self.connections = dict()
+        self.fec_list = dict()
+        self.vnf_list = dict()
         self.access_point = access_point
         self.rabbit_conn = rabbit_conn
         self.subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
@@ -457,6 +457,7 @@ class FEC:
                 return curr_node - 1
 
     def serve_client(self, sock, ip):
+        user_id = None
         while True:
             if stop:
                 break
@@ -473,37 +474,20 @@ class FEC:
                     control_response = json.loads(self.control_socket.recv(1024).decode())
                     if control_response['res'] == 200:
                         if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                            self.connections.append(dict(user_id=int(json_data['user_id']),
-                                                         sock=sock,
-                                                         mac=subprocess.check_output(['arp', '-n', ip]).decode().split('\n')
-                                                         [1].split()[2],
-                                                         ip=ip))
+                            self.connections[str(json_data['user_id'])] = {"sock": sock,
+                                                         "mac": subprocess.check_output(['arp', '-n', ip]).decode()\
+                                                             .split('\n')[1].split()[2],
+                                                         "ip": ip}
 
                         else:
-                            self.connections.append(dict(user_id=int(json_data['user_id']),
-                                                         sock=sock,
-                                                         ip=ip))
+                            self.connections[str(json_data['user_id'])] = {"sock": sock, "ip": ip}
+                        user_id = str(json_data['user_id'])
                         self.current_state['connected_users'].append(json_data['user_id'])
-                        k = 0
-                        while k < len(self.connections):
-                            if self.connections[k]['sock'] == sock:
-                                break
-                            else:
-                                k += 1
-                        if k != len(self.connections):
-                            m = 0
-                            while m < len(self.vnf_list):
-                                if self.vnf_list[m]['user_id'] == self.connections[k]['user_id']:
-                                    break
-                                else:
-                                    m += 1
-                            if m != len(self.vnf_list):
-                                logger.info('[I] Assigning resources for ' + ip + '...')
-                                print('Before assigning: ' + str(self.current_state))
-                                self.current_state['ram'] -= self.vnf_list[m]['ram']
-                                self.current_state['gpu'] -= self.vnf_list[m]['gpu']
-                                self.current_state['bw'] -= self.vnf_list[m]['bw']
-                                print('After assigning: ' + str(self.current_state))
+                        if str(json_data['user_id']) in self.vnf_list:
+                            logger.info('[I] Assigning resources for ' + ip + '...')
+                            self.current_state['ram'] -= self.vnf_list[user_id]['ram']
+                            self.current_state['gpu'] -= self.vnf_list[user_id]['gpu']
+                            self.current_state['bw'] -= self.vnf_list[user_id]['bw']
                         self.send_fec_message()
                         if self.id == -1:
                             logger.error('[!] FEC not connected to control!')
@@ -528,16 +512,11 @@ class FEC:
                             logger.error('[!] Error: target does not exist! json_data = ' + str(json_data))
                             sock.send(json.dumps(dict(res=404)).encode())  # Asked for non-existent target
                         else:
-                            self.control_socket.send(json.dumps(dict(type="vnf", data=json_data['data'])).encode())
+                            self.control_socket.send(json.dumps(dict(type="vnf", user_id=json_data['user_id'],
+                                                                     data=json_data['data'])).encode())
                             control_response = json.loads(self.control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
-                                i = 0
-                                while i < len(self.connections):
-                                    if self.connections[i]['sock'] == sock:
-                                        break
-                                    else:
-                                        i += 1
-                                if i == len(self.connections):
+                                if user_id not in self.connections:
                                     logger.error('[!] Trying to assign resources to unknown user!')
                                     sock.send(json.dumps(dict(res=404)).encode())
                                 else:
@@ -551,30 +530,16 @@ class FEC:
                                         next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
                                     cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                                             + '_' + str(next_node)])
-                                    j = 0
-                                    while j < len(self.vnf_list):
-                                        if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
-                                            break
-                                        else:
-                                            j += 1
                                     if cav_fec == self.id:
                                         logger.info('[I] Assigning resources for ' + ip + '...')
-                                        print('Before assigning: ' + str(self.current_state))
                                         self.current_state['ram'] -= json_data['data']['ram']
                                         self.current_state['gpu'] -= json_data['data']['gpu']
                                         self.current_state['bw'] -= json_data['data']['bw']
-                                        print('After assigning: ' + str(self.current_state))
                                     self.send_fec_message()
 
                                     if general['training_if'] != 'y' and general['training_if'] != 'Y':
                                         if self.locations is not None:
-                                            k = 0
-                                            fec_mac = self.fec_list[0]['mac']
-                                            while k < len(self.fec_list):
-                                                if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                                    fec_mac = self.fec_list[k]['mac']
-                                                    break
-                                                k += 1
+                                            fec_mac = self.fec_list[str(cav_fec)]['mac']
                                             sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                       cav_fec=cav_fec, fec_mac=fec_mac,
                                                                       location=self.locations['point_'
@@ -583,13 +548,7 @@ class FEC:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                                     else:
                                         if self.locations is not None:
-                                            k = 0
-                                            fec_ip = self.fec_list[0]['ip']
-                                            while k < len(self.fec_list):
-                                                if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                                    fec_ip = self.fec_list[k]['ip']
-                                                    break
-                                                k += 1
+                                            fec_ip = self.fec_list["0"]['ip']  # CAMBIAR POR str(cav_fec)
                                             sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                       cav_fec=cav_fec, fec_ip=fec_ip,
                                                                       location=self.locations['point_'
@@ -601,37 +560,14 @@ class FEC:
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                     else:
                         # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
-                        i = 0
-                        while i < len(self.connections):
-                            if self.connections[i]['sock'] == sock:
-                                break
-                            else:
-                                i += 1
-                        if i == len(self.connections):
+                        if user_id not in self.connections:
                             logger.error('[!] Trying to release resources from unknown user!')
                             sock.send(json.dumps(dict(res=404)).encode())
                         else:
-                            m = 0
-                            while m < len(self.vnf_list):
-                                if json_data['data']['user_id'] == self.vnf_list[m]['user_id']:
-                                    break
-                                else:
-                                    m += 1
-                            if m != len(self.vnf_list):
-                                logger.info('[I] Releasing resources from ' + ip + '...')
-
-                                j = 0
-                                while j < len(self.vnf_list):
-                                    if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
-                                        break
-                                    else:
-                                        j += 1
-                                print('Before releasing: ' + str(self.current_state))
-                                self.current_state['ram'] += self.vnf_list[j]['ram']
-                                self.current_state['gpu'] += self.vnf_list[j]['gpu']
-                                self.current_state['bw'] += self.vnf_list[j]['bw']
-                                print('After releasing: ' + str(self.current_state))
-                                self.send_fec_message()
+                            self.current_state['ram'] += self.vnf_list[user_id]['ram']
+                            self.current_state['gpu'] += self.vnf_list[user_id]['gpu']
+                            self.current_state['bw'] += self.vnf_list[user_id]['bw']
+                            self.send_fec_message()
 
                             sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
                 except ValueError as e:
@@ -644,108 +580,69 @@ class FEC:
                     sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
             elif json_data['type'] == 'state':
                 try:
-                    n = 0
-                    while n < len(self.vnf_list):
-                        if self.vnf_list[n]['user_id'] == json_data['data']['user_id']:
-                            break
+                    self.vnf_list[user_id]['previous_node'] = json_data['data']['previous_node']
+                    self.vnf_list[user_id]['current_node'] = json_data['data']['current_node']
+                    self.vnf_list[user_id]['cav_fec'] = json_data['data']['cav_fec']
+                    self.vnf_list[user_id]['time_steps'] = json_data['data']['time_steps']
+                    if self.vnf_list[user_id]['target'] != json_data['data']['current_node']:
+                        self.send_fec_message()
+                        self.control_socket.send(json.dumps(dict(type="vnf", user_id=user_id,
+                                                                 data=self.vnf_list[user_id])).encode())
+                        control_response = json.loads(self.control_socket.recv(1024).decode())
+                        if control_response['res'] == 200:
+                            if self.locations is not None:
+                                # MODEL PLANE: GET ACTION
+                                if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
+                                    while self.next_action is None:
+                                        time.sleep(0.001)
+                                    next_node = self.next_action
+                                    self.next_action = None
+                                else:
+                                    next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
+                                cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
+                                                        + '_' + str(next_node)])
+                                if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                                    fec_mac = self.fec_list[str(cav_fec)]['mac']
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                              cav_fec=cav_fec, fec_mac=fec_mac,
+                                                              location=self.locations['point_'
+                                                                                 + str(next_node)])).encode())
+                                else:
+                                    fec_ip = self.fec_list["0"]['ip']  # CAMBIAR POR str(cav_fec)
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                              cav_fec=cav_fec, fec_ip=fec_ip,
+                                                              location=self.locations['point_'
+                                                                                      + str(next_node)])).encode())
+                            else:
+                                sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                         else:
-                            n += 1
-                    if n == len(self.vnf_list):
-                        logger.warning('[!] User tried to update a non existing VNF!')
-                        sock.send(json.dumps(dict(res=404)).encode())  # User does not have active VNFs
+                            logger.error('[!] Error from control: ' + str(control_response['res']))
+                            sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                     else:
-                        self.vnf_list[n]['previous_node'] = json_data['data']['previous_node']
-                        self.vnf_list[n]['current_node'] = json_data['data']['current_node']
-                        self.vnf_list[n]['cav_fec'] = json_data['data']['cav_fec']
-                        self.vnf_list[n]['time_steps'] = json_data['data']['time_steps']
-                        if self.vnf_list[n]['target'] != json_data['data']['current_node']:
-                            self.send_fec_message()
-                            self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
+                        # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
+                        if user_id not in self.connections:
+                            logger.error('[!] Trying to release resources from unknown user!')
+                            sock.send(json.dumps(dict(res=404)).encode())
+                        else:
+                            if user_id in self.vnf_list:
+                                logger.info('[I] Releasing resources from ' + ip + '...')
+                                self.current_state['ram'] += self.vnf_list[user_id]['ram']
+                                self.current_state['gpu'] += self.vnf_list[user_id]['gpu']
+                                self.current_state['bw'] += self.vnf_list[user_id]['bw']
+                                self.control_socket.send(json.dumps(dict(type="vnf", user_id=user_id,
+                                                                         data=self.vnf_list[user_id])).encode())
+                            else:
+                                self.control_socket.send(json.dumps(dict(type="vnf", user_id=user_id,
+                                                                         data=self.vnf_list[user_id])).encode())
                             control_response = json.loads(self.control_socket.recv(1024).decode())
                             if control_response['res'] == 200:
-                                if self.locations is not None:
-                                    # MODEL PLANE: GET ACTION
-                                    if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
-                                        while self.next_action is None:
-                                            time.sleep(0.001)
-                                        next_node = self.next_action
-                                        self.next_action = None
-                                    else:
-                                        next_node = self.get_action(self.vnf_list[n]['target'], json_data['data']['current_node'])
-                                    cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                                            + '_' + str(next_node)])
-                                    k = 0
-                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                                        fec_mac = self.fec_list[0]['mac']
-                                        while k < len(self.fec_list):
-                                            if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                                fec_mac = self.fec_list[k]['mac']
-                                                break
-                                            k += 1
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                  cav_fec=cav_fec, fec_mac=fec_mac,
-                                                                  location=self.locations['point_'
-                                                                                     + str(next_node)])).encode())
-                                    else:
-                                        fec_ip = self.fec_list[0]['ip']
-                                        while k < len(self.fec_list):
-                                            if int(self.fec_list[k]['fec_id']) == cav_fec:
-                                                fec_ip = self.fec_list[k]['ip']
-                                                break
-                                            k += 1
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                  cav_fec=cav_fec, fec_ip=fec_ip,
-                                                                  location=self.locations['point_'
-                                                                                          + str(next_node)])).encode())
-                                else:
-                                    sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
+                                self.send_fec_message()
+                                sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
                             else:
-                                logger.error('[!] Error from control: ' + str(control_response['res']))
-                                sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
-                        else:
-                            # REACHED DESTINATION. NO NEED TO USE MODEL PLANE
-                            i = 0
-                            while i < len(self.connections):
-                                if self.connections[i]['sock'] == sock:
-                                    break
-                                else:
-                                    i += 1
-                            if i == len(self.connections):
-                                logger.error('[!] Trying to release resources from unknown user!')
-                                sock.send(json.dumps(dict(res=404)).encode())
-                            else:
-                                m = 0
-                                while m < len(self.vnf_list):
-                                    if json_data['data']['user_id'] == self.vnf_list[m]['user_id']:
-                                        break
-                                    else:
-                                        m += 1
-                                if m != len(self.vnf_list):
-                                    logger.info('[I] Releasing resources from ' + ip + '...')
-                                    print('Before releasing: ' + str(self.current_state))
-
-                                    j = 0
-                                    while j < len(self.vnf_list):
-                                        if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
-                                            break
-                                        else:
-                                            j += 1
-                                    self.current_state['ram'] += self.vnf_list[j]['ram']
-                                    self.current_state['gpu'] += self.vnf_list[j]['gpu']
-                                    self.current_state['bw'] += self.vnf_list[j]['bw']
-                                    print('After releasing: ' + str(self.current_state))
-                                    self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
-                                else:
-                                    self.control_socket.send(json.dumps(dict(type="vnf", data=self.vnf_list[n])).encode())
-                                control_response = json.loads(self.control_socket.recv(1024).decode())
-                                if control_response['res'] == 200:
-                                    self.send_fec_message()
-                                    sock.send(json.dumps(dict(res=200, next_node=-1)).encode())
-                                else:
-                                    logger.error('[!] Error from control when sending ended VNF: '
-                                                 + str(control_response['res']))
-                                    sock.send(
-                                        json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
+                                logger.error('[!] Error from control when sending ended VNF: '
+                                             + str(control_response['res']))
+                                sock.send(
+                                    json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
                 except ValueError:
                     logger.error('[!] ValueError at FEC when updating CAV status: ' + str(e))
                     sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
@@ -758,31 +655,17 @@ class FEC:
                 sock.send(json.dumps(dict(res=400)).encode())  # Bad request
 
         try:
-            found = False
-            i = 0
-            while not found and i < len(self.connections):
-                if self.connections[i]['sock'] == sock:
-                    found = True
-                else:
-                    i += 1
-            if found:
-                j = 0
-                while j < len(self.vnf_list):
-                    if self.vnf_list[j]['user_id'] == self.connections[i]['user_id']:
-                        break
-                    else:
-                        j += 1
-                if j < len(self.vnf_list) and self.vnf_list[j]['previous_node'] != self.vnf_list[j]['current_node']\
-                        and self.vnf_list[j]['current_node'] != self.vnf_list[j]['target']:
-                    print('Before releasing: ' + str(self.current_state))
-                    self.current_state['ram'] += self.vnf_list[j]['ram']
-                    self.current_state['gpu'] += self.vnf_list[j]['gpu']
-                    self.current_state['bw'] += self.vnf_list[j]['bw']
-                    print('After releasing: ' + str(self.current_state))
-                    logger.info('[I] Releasing resources from ' + ip + '...')
+            if user_id in self.connections:
+                if user_id in self.vnf_list:
+                    if self.vnf_list[user_id]['previous_node'] != self.vnf_list[user_id]['current_node']\
+                            and self.vnf_list[user_id]['current_node'] != self.vnf_list[user_id]['target']:
+                        self.current_state['ram'] += self.vnf_list[user_id]['ram']
+                        self.current_state['gpu'] += self.vnf_list[user_id]['gpu']
+                        self.current_state['bw'] += self.vnf_list[user_id]['bw']
+                        logger.info('[I] Releasing resources from ' + ip + '...')
                 logger.info('[I] User ' + ip + ' disconnected.')
-                self.current_state['connected_users'].remove(self.connections[i]['user_id'])
-                self.connections.pop(i)
+                self.current_state['connected_users'].remove(int(user_id))
+                self.connections.pop(user_id)
                 self.send_fec_message()
             else:
                 logger.error('[!] Disconnected unknown valid user!')
