@@ -693,11 +693,11 @@ class FEC:
             # START AP
 
             if general['training_if'] == 'n':
-                logger.info("[I] Starting AP on " + general['wlan_if_name'] + "...")
+                logger.warning("[I] Starting AP on " + general['wlan_if_name'] + "...")
                 os.system('sudo systemctl stop systemd-resolved')
                 self.access_point.start()
             if wireshark_if == "y" or wireshark_if == "":
-                logger.info("[I] Starting Wireshark...")
+                logger.warning("[I] Starting Wireshark...")
                 if general['training_if'] == 'n':
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
                             + script_path + "logs/ap-wireshark.pcap")
@@ -705,7 +705,7 @@ class FEC:
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['eth_if_name'] + " -k -w "
                             + script_path + "logs/ap-wireshark.pcap")
             if tshark_if == "y" or tshark_if == "":
-                logger.info("[I] Starting Tshark...")
+                logger.warning("[I] Starting Tshark...")
                 if general['training_if'] == 'n':
                     os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
                             "logs/ap-tshark.pcap")
@@ -730,7 +730,7 @@ class FEC:
                                                      mac=self.get_mac_address(general['wlan_if_name']))).encode())
             response = json.loads(self.control_socket.recv(1024).decode())
             if response['res'] == 200:
-                logger.info('[I] My ID is: ' + str(response['id']))
+                logger.warning('[I] My ID is: ' + str(response['id']))
                 self.id = response['id']
             else:
                 logger.critical('[!] Error from Control' + str(response['res']))
@@ -766,7 +766,7 @@ class FEC:
                 socket_thread.daemon = True
                 socket_thread.start()
         except KeyboardInterrupt:
-            logger.info("[!] Stopping... (Dont worry if you get errors)")
+            logger.warning("[!] Stopping... (Dont worry if you get errors)")
             stop = True
             self.kill_thread(self.subscribe_thread.ident)
             self.subscribe_thread.join()
@@ -778,8 +778,8 @@ class FEC:
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            time.sleep(3)
             if general['training_if'] != 'n':
+                time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except OSError:
             logger.critical("[!] Error when binding address and port for server! Stopping...")
@@ -788,8 +788,8 @@ class FEC:
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            time.sleep(3)
             if general['training_if'] != 'n':
+                time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except TypeError:
             logger.critical("[!] Detected error in value type at one variable! Stopping...")
@@ -798,8 +798,8 @@ class FEC:
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            time.sleep(3)
             if general['training_if'] != 'n':
+                time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except ValueError:
             logger.critical("[!] Detected error in value at one variable! Stopping...")
@@ -808,8 +808,8 @@ class FEC:
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            time.sleep(3)
             if general['training_if'] != 'n':
+                time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except Exception as e:
             logger.exception(e)
@@ -817,8 +817,8 @@ class FEC:
             if general['training_if'] == 'n':
                 self.access_point.stop()
             self.stop_program(wireshark_if, tshark_if)
-            time.sleep(3)
             if general['training_if'] != 'n':
+                time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
 
 
@@ -839,28 +839,28 @@ if __name__ == '__main__':
     # SCENARIO QUESTION
     scenario_if = int(general['scenario_if'])
     if scenario_if == 0:
-        logger.info('[I] Chose scenario: No GPS use')
+        logger.warning('[I] Chose scenario: No GPS use')
         locations = None
     elif scenario_if == 1:
-        logger.info('[I] Chose scenario: 2_2')
+        logger.warning('[I] Chose scenario: 2_2')
         locations = config['2_2']
     elif scenario_if == 2:
-        logger.info('[I] Chose scenario: 2_4')
+        logger.warning('[I] Chose scenario: 2_4')
         locations = config['2_4']
     elif scenario_if == 3:
-        logger.info('[I] Chose scenario: 2_7d')
+        logger.warning('[I] Chose scenario: 2_7d')
         locations = config['2_7d']
     elif scenario_if == 4:
-        logger.info('[I] Chose scenario: 2_8')
+        logger.warning('[I] Chose scenario: 2_8')
         locations = config['2_8']
     elif scenario_if == 5:
-        logger.info('[I] Chose scenario: 4_12d')
+        logger.warning('[I] Chose scenario: 4_12d')
         locations = config['4_12d']
     elif scenario_if == 6:
-        logger.info('[I] Chose scenario: 4_16')
+        logger.warning('[I] Chose scenario: 4_16')
         locations = config['4_16']
     elif scenario_if == 7:
-        logger.info('[I] Chose scenario: str')
+        logger.warning('[I] Chose scenario: str')
         locations = config['str']
     else:
         logger.critical('Tried to load a non-existing scenario! Exiting...')
