@@ -15,6 +15,28 @@ import logging
 import pika
 import fcntl
 import struct
+from typing import Optional
+from config import TIMESTEPS_LIMIT, FECS_RANGE, \
+    EDGES_COST, NODES_POSITION, \
+    MAX_GPU, MIN_GPU, MIN_RAM, \
+    MAX_RAM, MIN_BW, MAX_BW
+
+
+def get_next_hop_fec(cav_trajectory) -> Optional[int]:
+    """
+    Retrieves the FEC associated with the last hop in the given CAV trajectory.
+
+    Parameters:
+    - cav_trajectory (Tuple[int, int]): The CAV trajectory represented as a tuple of current and previous nodes.
+
+    Returns: - Optional[int]: The FEC (Forward Error Correction) associated with the last hop, or None if no matching
+    FEC is found.
+    """
+
+    try:
+        return next((fec for fec, one_hop_path in FECS_RANGE.items() if cav_trajectory in one_hop_path))
+    except StopIteration:
+        raise ValueError("No matching FEC found for the given CAV trajectory.")
 
 
 class FEC:
@@ -472,8 +494,10 @@ class FEC:
                                         self.next_action = None
                                     else:
                                         next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
-                                    cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                                            + '_' + str(next_node)])
+                                    next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                    cav_fec = get_next_hop_fec(next_cav_trajectory)
+                                    # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
+                                    #                         + '_' + str(next_node)])
                                     if cav_fec == self.id:
                                         logger.info('[I] Assigning resources for ' + ip + '...')
                                         self.current_state['ram'] -= json_data['data']['ram']
@@ -492,7 +516,7 @@ class FEC:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                                     else:
                                         if self.locations is not None:
-                                            fec_ip = self.fec_list["0"]['ip']  # CAMBIAR POR str(cav_fec)
+                                            fec_ip = self.fec_list[str(cav_fec)]['ip']
                                             sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                       cav_fec=cav_fec, fec_ip=fec_ip,
                                                                       location=self.locations['point_'
@@ -543,8 +567,10 @@ class FEC:
                                     self.next_action = None
                                 else:
                                     next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
-                                cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                                        + '_' + str(next_node)])
+                                next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                cav_fec = get_next_hop_fec(next_cav_trajectory)
+                                # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
+                                #                         + '_' + str(next_node)])
                                 if general['training_if'] != 'y' and general['training_if'] != 'Y':
                                     fec_mac = self.fec_list[str(cav_fec)]['mac']
                                     sock.send(json.dumps(dict(res=200, next_node=next_node,
@@ -552,7 +578,7 @@ class FEC:
                                                               location=self.locations['point_'
                                                                                  + str(next_node)])).encode())
                                 else:
-                                    fec_ip = self.fec_list["0"]['ip']  # CAMBIAR POR str(cav_fec)
+                                    fec_ip = self.fec_list[str(cav_fec)]['ip']
                                     sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                               cav_fec=cav_fec, fec_ip=fec_ip,
                                                               location=self.locations['point_'
@@ -772,7 +798,7 @@ class FEC:
             self.subscribe_thread.join()
             self.rabbit_conn.close()
             self.control_socket.close()
-            for connection in self.connections:
+            for connection in self.connections.values():
                 connection['sock'].close()
             if general['training_if'] == 'n':
                 self.access_point.stop()
