@@ -36,6 +36,7 @@ def get_next_hop_fec(cav_trajectory) -> Optional[int]:
     try:
         return next((fec for fec, one_hop_path in FECS_RANGE.items() if cav_trajectory in one_hop_path))
     except StopIteration:
+        logger.error(str(cav_trajectory))
         raise ValueError("No matching FEC found for the given CAV trajectory.")
 
 
@@ -495,6 +496,7 @@ class FEC:
                                     else:
                                         next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                    print(str(json_data))
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
                                     # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                     #                         + '_' + str(next_node)])
@@ -568,6 +570,7 @@ class FEC:
                                 else:
                                     next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
                                 next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                print(str(json_data))
                                 cav_fec = get_next_hop_fec(next_cav_trajectory)
                                 # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                 #                         + '_' + str(next_node)])
@@ -613,7 +616,7 @@ class FEC:
                                              + str(control_response['res']))
                                 sock.send(
                                     json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
-                except ValueError:
+                except ValueError as e:
                     logger.error('[!] ValueError at FEC when updating CAV status: ' + str(e))
                     sock.send(json.dumps(dict(res=400)).encode())  # Wrong query format
                 except IndexError as e:
@@ -807,8 +810,8 @@ class FEC:
             if general['training_if'] != 'n':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
-        except OSError:
-            logger.critical("[!] Error when binding address and port for server! Stopping...")
+        except OSError as e:
+            logger.critical("[!] Error when binding address and port for server! Stopping... " + str(e))
             stop = True
             if general['training_if'] == 'n':
                 self.access_point.stop()
@@ -850,7 +853,7 @@ class FEC:
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
-    config.read("fec_outdoor.ini")
+    config.read("fec_annex.ini")
     general = config['general']
     locations = config['general']
 
