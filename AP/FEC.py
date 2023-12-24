@@ -496,7 +496,6 @@ class FEC:
                                     else:
                                         next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
-                                    print(str(json_data))
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
                                     # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
                                     #                         + '_' + str(next_node)])
@@ -569,23 +568,26 @@ class FEC:
                                     self.next_action = None
                                 else:
                                     next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
-                                next_cav_trajectory = (json_data['data']['current_node'], next_node)
-                                print(str(json_data))
-                                cav_fec = get_next_hop_fec(next_cav_trajectory)
-                                # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                #                         + '_' + str(next_node)])
-                                if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                                    fec_mac = self.fec_list[str(cav_fec)]['mac']
-                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                              cav_fec=cav_fec, fec_mac=fec_mac,
-                                                              location=self.locations['point_'
-                                                                                 + str(next_node)])).encode())
+                                if next_node is not -1:
+                                    next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                    print(str(json_data))
+                                    cav_fec = get_next_hop_fec(next_cav_trajectory)
+                                    # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
+                                    #                         + '_' + str(next_node)])
+                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
+                                        fec_mac = self.fec_list[str(cav_fec)]['mac']
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec, fec_mac=fec_mac,
+                                                                  location=self.locations['point_'
+                                                                                     + str(next_node)])).encode())
+                                    else:
+                                        fec_ip = self.fec_list[str(cav_fec)]['ip']
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec, fec_ip=fec_ip,
+                                                                  location=self.locations['point_'
+                                                                                          + str(next_node)])).encode())
                                 else:
-                                    fec_ip = self.fec_list[str(cav_fec)]['ip']
-                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                              cav_fec=cav_fec, fec_ip=fec_ip,
-                                                              location=self.locations['point_'
-                                                                                      + str(next_node)])).encode())
+                                    sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
                             else:
                                 sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                         else:
