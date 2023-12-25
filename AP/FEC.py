@@ -15,6 +15,7 @@ import logging
 import pika
 import fcntl
 import struct
+import copy
 from typing import Optional
 from config import TIMESTEPS_LIMIT, FECS_RANGE, \
     EDGES_COST, NODES_POSITION, \
@@ -572,8 +573,6 @@ class FEC:
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
                                     print(str(json_data))
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
-                                    # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                    #                         + '_' + str(next_node)])
                                     if general['training_if'] != 'y' and general['training_if'] != 'Y':
                                         fec_mac = self.fec_list[str(cav_fec)]['mac']
                                         sock.send(json.dumps(dict(res=200, next_node=next_node,
@@ -587,7 +586,17 @@ class FEC:
                                                                   location=self.locations['point_'
                                                                                           + str(next_node)])).encode())
                                 else:
-                                    sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
+                                    vnf_to_kill = copy.deepcopy(self.vnf_list[user_id])
+                                    vnf_to_kill['target'] = vnf_to_kill['source']
+                                    self.control_socket.send(json.dumps(dict(type="vnf", user_id=int(user_id),
+                                                                             data=vnf_to_kill)).encode())
+                                    control_response = json.loads(self.control_socket.recv(1024).decode())
+                                    if control_response['res'] == 200:
+                                        sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
+                                    else:
+                                        logger.error('[!] Error from control: ' + str(control_response['res']))
+                                        sock.send(json.dumps(
+                                            dict(res=control_response['res'])).encode())  # Error from Control
                             else:
                                 sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                         else:
