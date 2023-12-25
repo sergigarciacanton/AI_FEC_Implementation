@@ -571,7 +571,6 @@ class FEC:
                                     next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
                                 if next_node is not -1:
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
-                                    print(str(json_data))
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
                                     if general['training_if'] != 'y' and general['training_if'] != 'Y':
                                         fec_mac = self.fec_list[str(cav_fec)]['mac']
@@ -586,14 +585,13 @@ class FEC:
                                                                   location=self.locations['point_'
                                                                                           + str(next_node)])).encode())
                                 else:
+                                    sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
                                     vnf_to_kill = copy.deepcopy(self.vnf_list[user_id])
-                                    vnf_to_kill['target'] = vnf_to_kill['source']
+                                    vnf_to_kill['current_node'] = vnf_to_kill['target']
                                     self.control_socket.send(json.dumps(dict(type="vnf", user_id=int(user_id),
                                                                              data=vnf_to_kill)).encode())
                                     control_response = json.loads(self.control_socket.recv(1024).decode())
-                                    if control_response['res'] == 200:
-                                        sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
-                                    else:
+                                    if control_response['res'] != 200:
                                         logger.error('[!] Error from control: ' + str(control_response['res']))
                                         sock.send(json.dumps(
                                             dict(res=control_response['res'])).encode())  # Error from Control
