@@ -21,6 +21,7 @@ from config import TIMESTEPS_LIMIT, FECS_RANGE, \
     EDGES_COST, NODES_POSITION, \
     MAX_GPU, MIN_GPU, MIN_RAM, \
     MAX_RAM, MIN_BW, MAX_BW
+from prometheus_client import start_http_server, Gauge
 
 
 def get_next_hop_fec(cav_trajectory) -> Optional[int]:
@@ -46,7 +47,7 @@ class FEC:
         self.id = None
         self.ip = None
         self.current_state = {"gpu": gpu, "ram": ram, "bw": bw, "mac": self.get_mac_address(general['wlan_if_name']),
-                                  "connected_users": []}
+                              "connected_users": []}
         self.control_socket = socket.socket()
         self.connections = dict()
         self.fec_list = dict()
@@ -54,6 +55,8 @@ class FEC:
         self.access_point = access_point
         self.rabbit_conn = rabbit_conn
         self.subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
+        self.update_thread = threading.Thread(target=self.update_prometheus)
+        self.network_thread = threading.Thread(target=self.network_usage)
         self.locations = locations
         self.next_action = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
@@ -103,7 +106,8 @@ class FEC:
                 logger.info("[I] From agent " + str(address) + ": " + str(data))
                 json_data = json.loads(data)
 
-                if json_data['type'] == 'action':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
+                if json_data[
+                    'type'] == 'action':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
                     try:
                         self.next_action = json_data['action']
                         conn.send(json.dumps(dict(res=200, id=self.id)).encode())  # Action saved
@@ -443,9 +447,10 @@ class FEC:
                     if control_response['res'] == 200:
                         if general['training_if'] != 'y' and general['training_if'] != 'Y':
                             self.connections[str(json_data['user_id'])] = {"sock": sock,
-                                                         "mac": subprocess.check_output(['arp', '-n', ip]).decode()\
-                                                             .split('\n')[1].split()[2],
-                                                         "ip": ip}
+                                                                           "mac": subprocess.check_output(
+                                                                               ['arp', '-n', ip]).decode() \
+                                                                               .split('\n')[1].split()[2],
+                                                                           "ip": ip}
 
                         else:
                             self.connections[str(json_data['user_id'])] = {"sock": sock, "ip": ip}
@@ -495,7 +500,8 @@ class FEC:
                                         next_node = self.next_action
                                         self.next_action = None
                                     else:
-                                        next_node = self.get_action(json_data['data']['target'], json_data['data']['current_node'])
+                                        next_node = self.get_action(json_data['data']['target'],
+                                                                    json_data['data']['current_node'])
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
                                     # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
@@ -513,7 +519,8 @@ class FEC:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                       cav_fec=cav_fec, fec_mac=fec_mac,
                                                                       location=self.locations['point_'
-                                                                                         + str(next_node)])).encode())
+                                                                                              + str(
+                                                                          next_node)])).encode())
                                         else:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                                     else:
@@ -522,7 +529,8 @@ class FEC:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                       cav_fec=cav_fec, fec_ip=fec_ip,
                                                                       location=self.locations['point_'
-                                                                                         + str(next_node)])).encode())
+                                                                                              + str(
+                                                                          next_node)])).encode())
                                         else:
                                             sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
                             else:
@@ -568,7 +576,8 @@ class FEC:
                                     next_node = self.next_action
                                     self.next_action = None
                                 else:
-                                    next_node = self.get_action(self.vnf_list[user_id]['target'], json_data['data']['current_node'])
+                                    next_node = self.get_action(self.vnf_list[user_id]['target'],
+                                                                json_data['data']['current_node'])
                                 if next_node is not -1:
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
@@ -577,7 +586,7 @@ class FEC:
                                         sock.send(json.dumps(dict(res=200, next_node=next_node,
                                                                   cav_fec=cav_fec, fec_mac=fec_mac,
                                                                   location=self.locations['point_'
-                                                                                     + str(next_node)])).encode())
+                                                                                          + str(next_node)])).encode())
                                     else:
                                         fec_ip = self.fec_list[str(cav_fec)]['ip']
                                         sock.send(json.dumps(dict(res=200, next_node=next_node,
@@ -639,7 +648,7 @@ class FEC:
         try:
             if user_id in self.connections:
                 if user_id in self.vnf_list:
-                    if self.vnf_list[user_id]['previous_node'] != self.vnf_list[user_id]['current_node']\
+                    if self.vnf_list[user_id]['previous_node'] != self.vnf_list[user_id]['current_node'] \
                             and self.vnf_list[user_id]['current_node'] != self.vnf_list[user_id]['target']:
                         self.current_state['ram'] += self.vnf_list[user_id]['ram']
                         self.current_state['gpu'] += self.vnf_list[user_id]['gpu']
@@ -654,7 +663,8 @@ class FEC:
             sock.send(json.dumps(dict(res=200)).encode())
             sock.close()  # Close the connection
         except IndexError as e:
-            logger.error('[!] IndexError when disconnecting CAV from FEC: ' + str(e) + '. connections = ' + str(self.connections))
+            logger.error('[!] IndexError when disconnecting CAV from FEC: ' + str(e) + '. connections = ' + str(
+                self.connections))
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
@@ -725,7 +735,8 @@ class FEC:
                     logger.warning('[!] CUDA device not found! Using fake value...')
                     self.current_state['gpu'] = 20000
                 self.current_state['ram'] = int(psutil.virtual_memory().free / (1024 ** 2))
-                self.current_state['bw'] = 54
+                #self.current_state['bw'] = 54
+                # self.current_state['bw'] = int(psutil.net_if_stats()["eth0"].speed)
             # /RESOURCES QUESTION
 
             # START AP
@@ -738,18 +749,20 @@ class FEC:
                 logger.warning("[I] Starting Wireshark...")
                 if general['training_if'] == 'n':
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
-                            + script_path + "logs/ap-wireshark.pcap")
+                              + script_path + "logs/ap-wireshark.pcap")
                 else:
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['eth_if_name'] + " -k -w "
-                            + script_path + "logs/ap-wireshark.pcap")
+                              + script_path + "logs/ap-wireshark.pcap")
             if tshark_if == "y" or tshark_if == "":
                 logger.warning("[I] Starting Tshark...")
                 if general['training_if'] == 'n':
-                    os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
-                            "logs/ap-tshark.pcap")
+                    os.system(
+                        "sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
+                        "logs/ap-tshark.pcap")
                 else:
-                    os.system("sudo screen -S ap-tshark -m -d tshark -i " + general['eth_if_name'] + " -w " + script_path +
-                            "logs/ap-tshark.pcap")
+                    os.system(
+                        "sudo screen -S ap-tshark -m -d tshark -i " + general['eth_if_name'] + " -w " + script_path +
+                        "logs/ap-tshark.pcap")
             # /START AP
 
             time.sleep(5)
@@ -758,6 +771,10 @@ class FEC:
 
             self.subscribe_thread.daemon = True
             self.subscribe_thread.start()
+            self.update_thread.daemon = True
+            self.update_thread.start()
+            self.network_thread.daemon = True
+            self.network_thread.start()
 
             host = general['control_ip']
             port = int(general['control_port'])
@@ -808,6 +825,10 @@ class FEC:
             stop = True
             self.kill_thread(self.subscribe_thread.ident)
             self.subscribe_thread.join()
+            self.kill_thread(self.update_thread.ident)
+            self.update_thread.join()
+            self.kill_thread(self.network_thread.ident)
+            self.network_thread.join()
             self.rabbit_conn.close()
             self.control_socket.close()
             for connection in self.connections.values():
@@ -859,6 +880,25 @@ class FEC:
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
 
+    def update_prometheus(self):
+        # PROMETHEUS
+        while True:
+            RAM.set(int(psutil.virtual_memory().free / (1024 ** 2)))
+            GPU.set(int(torch.cuda.mem_get_info()[0] / (1024 ** 2)))
+            BW.set(self.current_state['bw'])
+            time.sleep(2)
+
+    def network_usage(self):
+        while True:
+            start_time = time.time()
+            init_packets = (psutil.net_io_counters(pernic=True)["eth0"].bytes_recv +
+                            psutil.net_io_counters(pernic=True)["eth0"].bytes_sent)
+            time.sleep(1)
+            final_packets = (psutil.net_io_counters(pernic=True)["eth0"].bytes_recv +
+                             psutil.net_io_counters(pernic=True)["eth0"].bytes_sent)
+            end_time = time.time()
+            self.current_state['bw'] = ((final_packets - init_packets) / (end_time - start_time)) * 8 / (1024 ** 2)
+
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
@@ -873,6 +913,12 @@ if __name__ == '__main__':
     stream_handler.setFormatter(ColoredFormatter('%(log_color)s%(message)s'))
     logger.addHandler(stream_handler)
     logging.getLogger('pika').setLevel(logging.WARNING)
+    
+    # PROMETHEUS
+    start_http_server(addr=general['fec_eth_ip'], port=8000)
+    RAM = Gauge('RAM_available', 'RAM Available in FEC1')
+    GPU = Gauge('GPU_available', 'GPU Available in FEC1')
+    BW = Gauge('BW_available', 'BW Available in FEC1')
 
     # SCENARIO QUESTION
     scenario_if = int(general['scenario_if'])
@@ -907,7 +953,7 @@ if __name__ == '__main__':
 
     stop = False
     if general['training_if'] == 'n':
-        my_fec = FEC(30, 20, 20, pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
+        my_fec = FEC(16, 32, 64, pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                                            password=general['wlan_password'], ip=general['wlan_ap_ip'],
                                                            netmask=general['wlan_netmask'],
                                                            inet=general['eth_if_name']), pika.BlockingConnection(
@@ -915,7 +961,7 @@ if __name__ == '__main__':
                                       credentials=pika.PlainCredentials(general['control_username'],
                                                                         general['control_password']))), locations)
     else:
-        my_fec = FEC(30, 20, 20, None, pika.BlockingConnection(
+        my_fec = FEC(16, 32, 64, None, pika.BlockingConnection(
             pika.ConnectionParameters(host=general['control_ip'], port=int(general['rabbit_port']),
                                       credentials=pika.PlainCredentials(general['control_username'],
                                                                         general['control_password']))), locations)
