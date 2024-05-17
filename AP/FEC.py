@@ -214,54 +214,28 @@ class FEC:
                 else:
                     return 4
         elif scenario_if == 4:
-            if curr_node == 1:
-                if target != 5:
-                    return 2
-                else:
-                    return 5
+            if curr_node == 0:
+                return 4
+            elif curr_node == 1:
+                return 0
             elif curr_node == 2:
-                if target == 6:
+                if target == 3 or target == 6 or target == 7:
                     return 6
-                elif target == 1 or target == 5:
-                    return 1
                 else:
-                    return 3
+                    return 1
             elif curr_node == 3:
-                if target == 7:
-                    return 7
-                elif target == 4 or target == 8:
-                    return 4
-                else:
-                    return 2
+                return 2
             elif curr_node == 4:
-                if target != 8:
-                    return 8
-                else:
-                    return 3
+                return 5
             elif curr_node == 5:
-                if target != 1:
-                    return 6
-                else:
+                if target == 0 or target == 1 or target == 4:
                     return 1
-            elif curr_node == 6:
-                if target == 2:
-                    return 2
-                elif target == 1 or target == 5:
-                    return 5
-                else:
-                    return 7
-            elif curr_node == 7:
-                if target == 3:
-                    return 3
-                elif target == 4 or target == 8:
-                    return 8
                 else:
                     return 6
-            elif curr_node == 8:
-                if target != 4:
-                    return 7
-                else:
-                    return 4
+            elif curr_node == 6:
+                return 7
+            elif curr_node == 7:
+                return 3
         elif scenario_if == 5:
             if curr_node == 1:
                 if target != 3 and target != 6 and target != 8 and target != 11:
