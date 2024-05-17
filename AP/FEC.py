@@ -735,8 +735,8 @@ class FEC:
                     logger.warning('[!] CUDA device not found! Using fake value...')
                     self.current_state['gpu'] = 20000
                 self.current_state['ram'] = int(psutil.virtual_memory().free / (1024 ** 2))
-                #self.current_state['bw'] = 54
-                # self.current_state['bw'] = int(psutil.net_if_stats()["eth0"].speed)
+                self.network_thread.daemon = True
+                self.network_thread.start()
             # /RESOURCES QUESTION
 
             # START AP
@@ -773,8 +773,6 @@ class FEC:
             self.subscribe_thread.start()
             self.update_thread.daemon = True
             self.update_thread.start()
-            self.network_thread.daemon = True
-            self.network_thread.start()
 
             host = general['control_ip']
             port = int(general['control_port'])
@@ -827,8 +825,9 @@ class FEC:
             self.subscribe_thread.join()
             self.kill_thread(self.update_thread.ident)
             self.update_thread.join()
-            self.kill_thread(self.network_thread.ident)
-            self.network_thread.join()
+            if resources_if == 'Y' or resources_if == 'y':
+                self.kill_thread(self.network_thread.ident)
+                self.network_thread.join()
             self.rabbit_conn.close()
             self.control_socket.close()
             for connection in self.connections.values():
