@@ -504,6 +504,8 @@ class FEC:
                     sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
             elif json_data['type'] == 'state':
                 try:
+                    print(self.vnf_list)
+                    print(user_id)
                     self.vnf_list[user_id]['previous_node'] = json_data['data']['previous_node']
                     self.vnf_list[user_id]['current_node'] = json_data['data']['current_node']
                     self.vnf_list[user_id]['cav_fec'] = json_data['data']['cav_fec']
@@ -631,9 +633,9 @@ class FEC:
         def callback(ch, method, properties, body):
             logger.debug("[D] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
             if str(method.routing_key) == 'fec':
-                self.fec_list = json.loads(body.decode('utf-8'))
+                self.fec_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
             elif str(method.routing_key) == 'vnf':
-                self.vnf_list = json.loads(body.decode('utf-8'))
+                self.vnf_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
 
         channel.basic_consume(
             queue=queue, on_message_callback=callback, auto_ack=True)
