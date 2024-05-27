@@ -13,14 +13,9 @@ import ctypes
 import sys
 import logging
 import pika
-import fcntl
-import struct
 import copy
 from typing import Optional
-from config import TIMESTEPS_LIMIT, FECS_RANGE, \
-    EDGES_COST, NODES_POSITION, \
-    MAX_GPU, MIN_GPU, MIN_RAM, \
-    MAX_RAM, MIN_BW, MAX_BW
+from config import FECS_RANGE
 from prometheus_client import start_http_server, Gauge
 
 
@@ -46,25 +41,22 @@ class FEC:
     def __init__(self, gpu, ram, bw, access_point, rabbit_conn, locations):
         self.id = None
         self.ip = None
-        self.current_state = {"gpu": gpu, "ram": ram, "bw": bw, "mac": self.get_mac_address(general['wlan_if_name']),
-                              "connected_users": []}
+        self.current_state = {"gpu": gpu, "ram": ram, "bw": bw, "connected_users": []}
         self.control_socket = socket.socket()
         self.connections = dict()
         self.fec_list = dict()
         self.vnf_list = dict()
         self.access_point = access_point
         self.rabbit_conn = rabbit_conn
-        self.subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
-        self.update_thread = threading.Thread(target=self.update_prometheus)
-        self.network_thread = threading.Thread(target=self.network_usage)
+        self.rabbitmq_subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
+        self.update_prometheus_thread = threading.Thread(target=self.update_prometheus)
+        self.bw_thread = threading.Thread(target=self.network_usage)
         self.locations = locations
         self.next_action = None
+        self.ram_metric = None
+        self.gpu_metric = None
+        self.bw_metric = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
-
-    def get_mac_address(self, if_name):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        info = fcntl.ioctl(s.fileno(), 0x8927, struct.pack('256s', bytes(if_name, 'utf-8')[:15]))
-        return ':'.join('%02x' % b for b in info[18:24])
 
     def get_data_by_console(self, data_type, message):
         valid = False
@@ -419,28 +411,17 @@ class FEC:
                     self.control_socket.send(json.dumps(dict(type="auth", user_id=json_data['user_id'])).encode())
                     control_response = json.loads(self.control_socket.recv(1024).decode())
                     if control_response['res'] == 200:
-                        if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                            self.connections[str(json_data['user_id'])] = {"sock": sock,
-                                                                           "mac": subprocess.check_output(
-                                                                               ['arp', '-n', ip]).decode() \
-                                                                               .split('\n')[1].split()[2],
-                                                                           "ip": ip}
-
-                        else:
-                            self.connections[str(json_data['user_id'])] = {"sock": sock, "ip": ip}
-                        user_id = str(json_data['user_id'])
+                        user_id = json_data['user_id']
+                        self.connections[user_id] = {"sock": sock, "mac": subprocess.check_output(
+                            ['arp', '-n', ip]).decode().split('\n')[1].split()[2], "ip": ip}
                         self.current_state['connected_users'].append(json_data['user_id'])
-                        if str(json_data['user_id']) in self.vnf_list:
+                        if json_data['user_id'] in self.vnf_list:
                             logger.info('[I] Assigning resources for ' + ip + '...')
                             self.current_state['ram'] -= self.vnf_list[user_id]['ram']
                             self.current_state['gpu'] -= self.vnf_list[user_id]['gpu']
                             self.current_state['bw'] -= self.vnf_list[user_id]['bw']
                         self.send_fec_message()
-                        if self.id == -1:
-                            logger.error('[!] FEC not connected to control!')
-                            sock.send(json.dumps(dict(res=500)).encode())  # FEC not connected to Control
-                        else:
-                            sock.send(json.dumps(dict(res=200, id=self.id)).encode())  # Access granted
+                        sock.send(json.dumps(dict(res=200, id=self.id)).encode())  # Access granted
                     else:
                         logger.error('[!] Error from control when authenticating a CAV: ' + str(control_response))
                         sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error reported by Control
@@ -478,8 +459,6 @@ class FEC:
                                                                     json_data['data']['current_node'])
                                     next_cav_trajectory = (json_data['data']['current_node'], next_node)
                                     cav_fec = get_next_hop_fec(next_cav_trajectory)
-                                    # cav_fec = int(self.locations['point_' + str(json_data['data']['current_node'])
-                                    #                         + '_' + str(next_node)])
                                     if cav_fec == self.id:
                                         logger.info('[I] Assigning resources for ' + ip + '...')
                                         self.current_state['ram'] -= json_data['data']['ram']
@@ -487,26 +466,19 @@ class FEC:
                                         self.current_state['bw'] -= json_data['data']['bw']
                                     self.send_fec_message()
 
-                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                                        if self.locations is not None:
-                                            fec_mac = self.fec_list[str(cav_fec)]['mac']
-                                            sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                      cav_fec=cav_fec, fec_mac=fec_mac,
-                                                                      location=self.locations['point_'
-                                                                                              + str(
-                                                                          next_node)])).encode())
-                                        else:
-                                            sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
+                                    if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec,
+                                                                  location=self.locations['point_'
+                                                                                          + str(
+                                                                      next_node)])).encode())
                                     else:
-                                        if self.locations is not None:
-                                            fec_ip = self.fec_list[str(cav_fec)]['ip']
-                                            sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                      cav_fec=cav_fec, fec_ip=fec_ip,
-                                                                      location=self.locations['point_'
-                                                                                              + str(
-                                                                          next_node)])).encode())
-                                        else:
-                                            sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
+                                        fec_ip = self.fec_list[str(cav_fec)]['ip']
+                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                                  cav_fec=cav_fec, fec_ip=fec_ip,
+                                                                  location=self.locations['point_'
+                                                                                          + str(
+                                                                      next_node)])).encode())
                             else:
                                 logger.error('[!] Error from control: ' + str(control_response['res']))
                                 sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
@@ -535,51 +507,46 @@ class FEC:
                     self.vnf_list[user_id]['previous_node'] = json_data['data']['previous_node']
                     self.vnf_list[user_id]['current_node'] = json_data['data']['current_node']
                     self.vnf_list[user_id]['cav_fec'] = json_data['data']['cav_fec']
-                    self.vnf_list[user_id]['time_steps'] = json_data['data']['time_steps']
                     if self.vnf_list[user_id]['target'] != json_data['data']['current_node']:
                         self.send_fec_message()
                         self.control_socket.send(json.dumps(dict(type="vnf", user_id=user_id,
                                                                  data=self.vnf_list[user_id])).encode())
                         control_response = json.loads(self.control_socket.recv(1024).decode())
                         if control_response['res'] == 200:
-                            if self.locations is not None:
-                                # MODEL PLANE: GET ACTION
-                                if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
-                                    while self.next_action is None:
-                                        time.sleep(0.001)
-                                    next_node = self.next_action
-                                    self.next_action = None
-                                else:
-                                    next_node = self.get_action(self.vnf_list[user_id]['target'],
-                                                                json_data['data']['current_node'])
-                                if next_node is not -1:
-                                    next_cav_trajectory = (json_data['data']['current_node'], next_node)
-                                    cav_fec = get_next_hop_fec(next_cav_trajectory)
-                                    if general['training_if'] != 'y' and general['training_if'] != 'Y':
-                                        fec_mac = self.fec_list[str(cav_fec)]['mac']
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                  cav_fec=cav_fec, fec_mac=fec_mac,
-                                                                  location=self.locations['point_'
-                                                                                          + str(next_node)])).encode())
-                                    else:
-                                        fec_ip = self.fec_list[str(cav_fec)]['ip']
-                                        sock.send(json.dumps(dict(res=200, next_node=next_node,
-                                                                  cav_fec=cav_fec, fec_ip=fec_ip,
-                                                                  location=self.locations['point_'
-                                                                                          + str(next_node)])).encode())
-                                else:
-                                    sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
-                                    vnf_to_kill = copy.deepcopy(self.vnf_list[user_id])
-                                    vnf_to_kill['current_node'] = vnf_to_kill['target']
-                                    self.control_socket.send(json.dumps(dict(type="vnf", user_id=int(user_id),
-                                                                             data=vnf_to_kill)).encode())
-                                    control_response = json.loads(self.control_socket.recv(1024).decode())
-                                    if control_response['res'] != 200:
-                                        logger.error('[!] Error from control: ' + str(control_response['res']))
-                                        sock.send(json.dumps(
-                                            dict(res=control_response['res'])).encode())  # Error from Control
+                            # MODEL PLANE: GET ACTION
+                            if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
+                                while self.next_action is None:
+                                    time.sleep(0.001)
+                                next_node = self.next_action
+                                self.next_action = None
                             else:
-                                sock.send(json.dumps(dict(res=200, next_node=next_node)).encode())
+                                next_node = self.get_action(self.vnf_list[user_id]['target'],
+                                                            json_data['data']['current_node'])
+                            if next_node is not -1:
+                                next_cav_trajectory = (json_data['data']['current_node'], next_node)
+                                cav_fec = get_next_hop_fec(next_cav_trajectory)
+                                if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                              cav_fec=cav_fec,
+                                                              location=self.locations['point_'
+                                                                                      + str(next_node)])).encode())
+                                else:
+                                    fec_ip = self.fec_list[str(cav_fec)]['ip']
+                                    sock.send(json.dumps(dict(res=200, next_node=next_node,
+                                                              cav_fec=cav_fec, fec_ip=fec_ip,
+                                                              location=self.locations['point_'
+                                                                                      + str(next_node)])).encode())
+                            else:
+                                sock.send(json.dumps(dict(res=200, next_node=-1)).encode())  # Stop CAV. Truncated
+                                vnf_to_kill = copy.deepcopy(self.vnf_list[user_id])
+                                vnf_to_kill['current_node'] = vnf_to_kill['target']
+                                self.control_socket.send(json.dumps(dict(type="vnf", user_id=int(user_id),
+                                                                         data=vnf_to_kill)).encode())
+                                control_response = json.loads(self.control_socket.recv(1024).decode())
+                                if control_response['res'] != 200:
+                                    logger.error('[!] Error from control: ' + str(control_response['res']))
+                                    sock.send(json.dumps(
+                                        dict(res=control_response['res'])).encode())  # Error from Control
                         else:
                             logger.error('[!] Error from control: ' + str(control_response['res']))
                             sock.send(json.dumps(dict(res=control_response['res'])).encode())  # Error from Control
@@ -709,27 +676,26 @@ class FEC:
                     logger.warning('[!] CUDA device not found! Using fake value...')
                     self.current_state['gpu'] = 20000
                 self.current_state['ram'] = int(psutil.virtual_memory().free / (1024 ** 2))
-                self.network_thread.daemon = True
-                self.network_thread.start()
+                self.bw_thread.daemon = True
+                self.bw_thread.start()
             # /RESOURCES QUESTION
 
             # START AP
-
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 logger.warning("[I] Starting AP on " + general['wlan_if_name'] + "...")
                 os.system('sudo systemctl stop systemd-resolved')
                 self.access_point.start()
-            if wireshark_if == "y" or wireshark_if == "":
+            if wireshark_if == "y" or wireshark_if == "Y":
                 logger.warning("[I] Starting Wireshark...")
-                if general['training_if'] == 'n':
+                if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['wlan_if_name'] + " -k -w "
                               + script_path + "logs/ap-wireshark.pcap")
                 else:
                     os.system("sudo screen -S ap-wireshark -m -d wireshark -i " + general['eth_if_name'] + " -k -w "
                               + script_path + "logs/ap-wireshark.pcap")
-            if tshark_if == "y" or tshark_if == "":
+            if tshark_if == "y" or tshark_if == "Y":
                 logger.warning("[I] Starting Tshark...")
-                if general['training_if'] == 'n':
+                if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                     os.system(
                         "sudo screen -S ap-tshark -m -d tshark -i " + general['wlan_if_name'] + " -w " + script_path +
                         "logs/ap-tshark.pcap")
@@ -743,18 +709,17 @@ class FEC:
 
             stop = False
 
-            self.subscribe_thread.daemon = True
-            self.subscribe_thread.start()
-            self.update_thread.daemon = True
-            self.update_thread.start()
+            self.rabbitmq_subscribe_thread.daemon = True
+            self.rabbitmq_subscribe_thread.start()
+            self.update_prometheus_thread.daemon = True
+            self.update_prometheus_thread.start()
 
             host = general['control_ip']
             port = int(general['control_port'])
 
             self.control_socket.connect((host, port))
 
-            self.control_socket.send(json.dumps(dict(type="id", ip=self.control_socket.getsockname()[0],
-                                                     mac=self.get_mac_address(general['wlan_if_name']))).encode())
+            self.control_socket.send(json.dumps(dict(type="id", ip=self.control_socket.getsockname()[0])).encode())
             response = json.loads(self.control_socket.recv(1024).decode())
             if response['res'] == 200:
                 logger.warning('[I] My ID is: ' + str(response['id']))
@@ -764,18 +729,25 @@ class FEC:
                 raise Exception
             self.send_fec_message()
 
+            # PROMETHEUS
+            start_http_server(addr=self.control_socket.getsockname()[0], port=int(general['prometheus_port']))
+            self.ram_metric = Gauge('RAM_available', 'RAM Available in FEC1')
+            self.gpu_metric = Gauge('GPU_available', 'GPU Available in FEC1')
+            self.bw_metric = Gauge('BW_available', 'BW Available in FEC1')
+
             if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
                 agent_conn_thread = threading.Thread(target=self.agent_conn)
                 agent_conn_thread.daemon = True
                 agent_conn_thread.start()
 
             # Server's IP and port
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 host = general['wlan_ap_ip']
+                if general['wifi_kick_unauth_if'] == 'y' or general['wifi_kick_unauth_if'] == 'Y':
+                    new_conn_thread = threading.Thread(target=self.listen_new_conn)
+                    new_conn_thread.daemon = True
+                    new_conn_thread.start()
             else:
-                new_conn_thread = threading.Thread(target=self.listen_new_conn)
-                new_conn_thread.daemon = True
-                new_conn_thread.start()
                 host = self.control_socket.getsockname()[0]
             port = int(general['server_port'])
 
@@ -795,70 +767,70 @@ class FEC:
         except KeyboardInterrupt:
             logger.warning("[!] Stopping... (Dont worry if you get errors)")
             stop = True
-            self.kill_thread(self.subscribe_thread.ident)
-            self.subscribe_thread.join()
-            self.kill_thread(self.update_thread.ident)
-            self.update_thread.join()
+            self.kill_thread(self.rabbitmq_subscribe_thread.ident)
+            self.rabbitmq_subscribe_thread.join()
+            self.kill_thread(self.update_prometheus_thread.ident)
+            self.update_prometheus_thread.join()
             if resources_if == 'Y' or resources_if == 'y':
-                self.kill_thread(self.network_thread.ident)
-                self.network_thread.join()
+                self.kill_thread(self.bw_thread.ident)
+                self.bw_thread.join()
             self.rabbit_conn.close()
             self.control_socket.close()
             for connection in self.connections.values():
                 connection['sock'].close()
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            if general['training_if'] != 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except OSError as e:
             logger.critical("[!] Error when binding address and port for server! Stopping... " + str(e))
             stop = True
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            if general['training_if'] != 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except TypeError:
             logger.critical("[!] Detected error in value type at one variable! Stopping...")
             stop = True
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            if general['training_if'] != 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except ValueError:
             logger.critical("[!] Detected error in value at one variable! Stopping...")
             stop = True
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 self.access_point.stop()
                 logger.info("[I] AP stopped.")
             self.stop_program(wireshark_if, tshark_if)
-            if general['training_if'] != 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
         except Exception as e:
             logger.exception(e)
             stop = True
-            if general['training_if'] == 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 self.access_point.stop()
             self.stop_program(wireshark_if, tshark_if)
-            if general['training_if'] != 'n':
+            if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
 
     def update_prometheus(self):
         # PROMETHEUS
         while True:
-            RAM.set(int(psutil.virtual_memory().free / (1024 ** 2)))
-            GPU.set(int(torch.cuda.mem_get_info()[0] / (1024 ** 2)))
-            BW.set(self.current_state['bw'])
+            self.ram_metric.set(int(psutil.virtual_memory().free / (1024 ** 2)))
+            self.gpu_metric.set(int(torch.cuda.mem_get_info()[0] / (1024 ** 2)))
+            self.bw_metric.set(self.current_state['bw'])
             time.sleep(2)
 
     def network_usage(self):
@@ -886,19 +858,10 @@ if __name__ == '__main__':
     stream_handler.setFormatter(ColoredFormatter('%(log_color)s%(message)s'))
     logger.addHandler(stream_handler)
     logging.getLogger('pika').setLevel(logging.WARNING)
-    
-    # PROMETHEUS
-    start_http_server(addr=general['fec_eth_ip'], port=8000)
-    RAM = Gauge('RAM_available', 'RAM Available in FEC1')
-    GPU = Gauge('GPU_available', 'GPU Available in FEC1')
-    BW = Gauge('BW_available', 'BW Available in FEC1')
 
     # SCENARIO QUESTION
     scenario_if = int(general['scenario_if'])
-    if scenario_if == 0:
-        logger.warning('[I] Chose scenario: No GPS use')
-        locations = None
-    elif scenario_if == 1:
+    if scenario_if == 1:
         logger.warning('[I] Chose scenario: 2_2')
         locations = config['2_2']
     elif scenario_if == 2:
@@ -925,7 +888,7 @@ if __name__ == '__main__':
     # /SCENARIO QUESTION
 
     stop = False
-    if general['training_if'] == 'n':
+    if general['wifi_if'] == 'n' or general['wifi_if'] == 'N':
         my_fec = FEC(16, 32, 64, pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                                            password=general['wlan_password'], ip=general['wlan_ap_ip'],
                                                            netmask=general['wlan_netmask'],
