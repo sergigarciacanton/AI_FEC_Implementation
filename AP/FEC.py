@@ -711,8 +711,6 @@ class FEC:
 
             self.rabbitmq_subscribe_thread.daemon = True
             self.rabbitmq_subscribe_thread.start()
-            self.update_prometheus_thread.daemon = True
-            self.update_prometheus_thread.start()
 
             host = general['control_ip']
             port = int(general['control_port'])
@@ -734,6 +732,9 @@ class FEC:
             self.ram_metric = Gauge('RAM_available', 'RAM Available in FEC1')
             self.gpu_metric = Gauge('GPU_available', 'GPU Available in FEC1')
             self.bw_metric = Gauge('BW_available', 'BW Available in FEC1')
+
+            self.update_prometheus_thread.daemon = True
+            self.update_prometheus_thread.start()
 
             if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
                 agent_conn_thread = threading.Thread(target=self.agent_conn)
@@ -888,7 +889,7 @@ if __name__ == '__main__':
     # /SCENARIO QUESTION
 
     stop = False
-    if general['wifi_if'] == 'n' or general['wifi_if'] == 'N':
+    if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
         my_fec = FEC(16, 32, 64, pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                                            password=general['wlan_password'], ip=general['wlan_ap_ip'],
                                                            netmask=general['wlan_netmask'],
