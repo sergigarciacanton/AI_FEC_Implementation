@@ -687,6 +687,7 @@ class FEC:
                 logger.warning("[I] Starting AP on " + general['wlan_if_name'] + "...")
                 os.system('sudo systemctl stop systemd-resolved')
                 self.access_point.start()
+
             if wireshark_if == "y" or wireshark_if == "Y":
                 logger.warning("[I] Starting Wireshark...")
                 if general['wifi_if'] == 'y' or general['wifi_if'] == 'Y':
@@ -720,6 +721,7 @@ class FEC:
             self.control_socket.connect((host, port))
 
             self.control_socket.send(json.dumps(dict(type="id", ip=self.control_socket.getsockname()[0])).encode())
+            print(self.control_socket.getsockname()[0])
             response = json.loads(self.control_socket.recv(1024).decode())
             if response['res'] == 200:
                 logger.warning('[I] My ID is: ' + str(response['id']))
@@ -729,7 +731,19 @@ class FEC:
                 raise Exception
             self.send_fec_message()
 
-            # PROMETHEUS
+            # NAT for Prometheus Client
+            command_string = ("sudo iptables -t nat -A PREROUTING -d " + self.control_socket.getsockname()[0] +
+                              " -p tcp --dport 9000 -j DNAT --to-destination 10.0.0.11:9000")
+            p = subprocess.Popen(command_string, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p.wait()
+            result = p.communicate()
+
+            command_string = "sudo iptables -t nat -A POSTROUTING -d 10.0.0.11 -p tcp --dport 9000 -j MASQUERADE"
+            p = subprocess.Popen(command_string, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p.wait()
+            result = p.communicate()
+
+            # Prometheus Metrics
             start_http_server(addr=self.control_socket.getsockname()[0], port=int(general['prometheus_port']))
             self.ram_metric = Gauge('RAM_available', 'RAM Available in FEC1')
             self.gpu_metric = Gauge('GPU_available', 'GPU Available in FEC1')
