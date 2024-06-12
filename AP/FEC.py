@@ -49,13 +49,15 @@ class FEC:
         self.access_point = access_point
         self.rabbit_conn = rabbit_conn
         self.rabbitmq_subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
-        self.update_prometheus_thread = threading.Thread(target=self.update_prometheus)
+        self.update_prometheus_thread = threading.Thread(target=self.update_prometheus, args=(general['resources_if']))
         self.bw_thread = threading.Thread(target=self.network_usage)
         self.locations = locations
         self.next_action = None
         self.ram_metric = None
         self.gpu_metric = None
         self.bw_metric = None
+        self.rabbit_metric = Gauge('Rabbit_time', 'Time elapsed until all FECs receive message')
+        self.start_time = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
 
     def get_data_by_console(self, data_type, message):
@@ -504,8 +506,8 @@ class FEC:
                     sock.send(json.dumps(dict(res=500)).encode())  # Service not available (only one FEC active)
             elif json_data['type'] == 'state':
                 try:
-                    print(self.vnf_list)
-                    print(user_id)
+                    # print(self.vnf_list)
+                    # print(user_id)
                     self.vnf_list[user_id]['previous_node'] = json_data['data']['previous_node']
                     self.vnf_list[user_id]['current_node'] = json_data['data']['current_node']
                     self.vnf_list[user_id]['cav_fec'] = json_data['data']['cav_fec']
@@ -611,6 +613,7 @@ class FEC:
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
+        self.start_time = time.time()
         self.control_socket.send(json.dumps(dict(type="fec", data=self.current_state)).encode())
         response = json.loads(self.control_socket.recv(1024).decode())
         if response['res'] != 200:
@@ -633,6 +636,10 @@ class FEC:
         def callback(ch, method, properties, body):
             logger.debug("[D] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
             if str(method.routing_key) == 'fec':
+                if self.start_time is not None:
+                    end_time = time.time()
+                    self.rabbit_metric.set((end_time-self.start_time)*1000)
+                    self.start_time = None
                 self.fec_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
             elif str(method.routing_key) == 'vnf':
                 self.vnf_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
@@ -721,7 +728,6 @@ class FEC:
             self.control_socket.connect((host, port))
 
             self.control_socket.send(json.dumps(dict(type="id", ip=self.control_socket.getsockname()[0])).encode())
-            print(self.control_socket.getsockname()[0])
             response = json.loads(self.control_socket.recv(1024).decode())
             if response['res'] == 200:
                 logger.warning('[I] My ID is: ' + str(response['id']))
@@ -842,13 +848,17 @@ class FEC:
                 time.sleep(3)
                 os.system('sudo systemctl start systemd-resolved')
 
-    def update_prometheus(self):
+    def update_prometheus(self, resources_if):
         # PROMETHEUS
         while True:
-            self.ram_metric.set(int(psutil.virtual_memory().free / (1024 ** 2)))
-            self.gpu_metric.set(int(torch.cuda.mem_get_info()[0] / (1024 ** 2)))
+            if resources_if == 'Y' or resources_if == 'y':
+                self.ram_metric.set(int(psutil.virtual_memory().free / (1024 ** 2)))
+                self.gpu_metric.set(int(torch.cuda.mem_get_info()[0] / (1024 ** 2)))
+            else:
+                self.ram_metric.set(self.current_state['ram'])
+                self.gpu_metric.set(self.current_state['gpu'])
             self.bw_metric.set(self.current_state['bw'])
-            time.sleep(2)
+            time.sleep(1)
 
     def network_usage(self):
         while True:
