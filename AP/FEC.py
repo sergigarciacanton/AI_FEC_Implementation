@@ -48,8 +48,9 @@ class FEC:
         self.vnf_list = dict()
         self.access_point = access_point
         self.rabbit_conn = rabbit_conn
-        self.rabbitmq_subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
+        self.rabbitmq_subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf latency'))
         self.update_prometheus_thread = threading.Thread(target=self.update_prometheus, args=(general['resources_if']))
+        self.rabbitmq_testing_thread = threading.Thread(target=self.test_rabbitmq)
         self.bw_thread = threading.Thread(target=self.network_usage)
         self.locations = locations
         self.next_action = None
@@ -100,8 +101,7 @@ class FEC:
                 logger.info("[I] From agent " + str(address) + ": " + str(data))
                 json_data = json.loads(data)
 
-                if json_data[
-                    'type'] == 'action':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
+                if json_data['type'] == 'action':  # Finish setting up connection. Format: {"type": "auth", "user_id": 1}
                     try:
                         self.next_action = json_data['action']
                         conn.send(json.dumps(dict(res=200, id=self.id)).encode())  # Action saved
@@ -613,6 +613,7 @@ class FEC:
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
+        time.sleep(1)
         self.start_time = time.time()
         self.control_socket.send(json.dumps(dict(type="fec", data=self.current_state)).encode())
         response = json.loads(self.control_socket.recv(1024).decode())
@@ -638,11 +639,15 @@ class FEC:
             if str(method.routing_key) == 'fec':
                 if self.start_time is not None:
                     end_time = time.time()
+                    print(f"Time elapsed for FEC message is {(end_time - self.start_time) * 1000:.3f} ms")
                     self.rabbit_metric.set((end_time-self.start_time)*1000)
                     self.start_time = None
                 self.fec_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
             elif str(method.routing_key) == 'vnf':
                 self.vnf_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
+            elif str(method.routing_key) == 'latency':
+                start_time1 = float(json.loads(body.decode('utf-8'))['0'])
+                print(f"Time elapsed for specific message is {(time.time() - start_time1) * 1000:.3f} ms")
 
         channel.basic_consume(
             queue=queue, on_message_callback=callback, auto_ack=True)
@@ -736,7 +741,7 @@ class FEC:
                 logger.critical('[!] Error from Control' + str(response['res']))
                 raise Exception
             self.send_fec_message()
-
+            self.rabbitmq_testing_thread.start()
             # NAT for Prometheus Client
             command_string = ("sudo iptables -t nat -A PREROUTING -d " + self.control_socket.getsockname()[0] +
                               " -p tcp --dport 9000 -j DNAT --to-destination 10.0.0.11:9000")
@@ -871,10 +876,17 @@ class FEC:
             end_time = time.time()
             self.current_state['bw'] = ((final_packets - init_packets) / (end_time - start_time)) * 8 / (1024 ** 2)
 
+    def test_rabbitmq(self):
+        while True:
+            logger.info("Sending latency control message to control")
+            self.control_socket.send(json.dumps(dict(type="latency", data=time.time())).encode())
+            time.sleep(10)
+
+
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
-    config.read("fec_annex.ini")
+    config.read("fec_indoor.ini")
     general = config['general']
     locations = config['general']
 
