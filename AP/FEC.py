@@ -623,7 +623,10 @@ class FEC:
     def subscribe(self):
         logger.info('[I] Waiting for published data...')
         while not stop:
-            message = json.loads(self.zero_conn.recv_json())
+            try:
+                message = json.loads(self.zero_conn.recv_json())
+            except zmq.error.ContextTerminated:
+                pass
             logger.debug("[D] Received message. Key: " + str(message["key"]) + ". Message: " + message["body"])
 
             if str(message["key"]) == 'fec':
@@ -782,9 +785,9 @@ class FEC:
         except KeyboardInterrupt:
             logger.warning("[!] Stopping... (Dont worry if you get errors)")
             stop = True
+            self.kill_thread(self.zeromq_subscribe_thread.ident)
             self.zero_conn.close()
             self.context.term()
-            self.kill_thread(self.zeromq_subscribe_thread.ident)
             self.zeromq_subscribe_thread.join()
             self.kill_thread(self.update_prometheus_thread.ident)
             self.update_prometheus_thread.join()
