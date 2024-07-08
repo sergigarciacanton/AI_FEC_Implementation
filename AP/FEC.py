@@ -48,7 +48,7 @@ class FEC:
         self.vnf_list = dict()
         self.access_point = access_point
         self.context = zmq.Context()
-        self.zero_conn = self.context.socket(zmq.SUB)
+        self.zero_conn = None
         self.zeromq_subscribe_thread = threading.Thread(target=self.subscribe)
         self.update_prometheus_thread = threading.Thread(target=self.update_prometheus, args=(general['resources_if']))
         self.bw_thread = threading.Thread(target=self.network_usage)
@@ -623,18 +623,17 @@ class FEC:
     def subscribe(self):
         logger.info('[I] Waiting for published data...')
         while not stop:
-            message = self.zero_conn.recv_string()
-            topic, msg_json = message.split(' ', 1)
-            logger.debug("[D] Received message. Key: " + str(topic) + ". Message: " + msg_json)
+            message = json.loads(self.zero_conn.recv_json())
+            logger.debug("[D] Received message. Key: " + str(message["key"]) + ". Message: " + message["body"])
 
-            if str(topic) == 'fec':
+            if str(message["key"]) == 'fec':
                 if self.start_time is not None:
                     end_time = time.time()
                     self.rabbit_metric.set((end_time-self.start_time)*1000)
                     self.start_time = None
-                self.fec_list = {int(k): v for k, v in json.loads(msg_json).items()}
-            elif str(topic) == 'vnf':
-                self.vnf_list = {int(k): v for k, v in json.loads(msg_json).items()}
+                self.fec_list = {int(k): v for k, v in json.loads(message["body"]).items()}
+            elif str(message["key"]) == 'vnf':
+                self.vnf_list = {int(k): v for k, v in json.loads(message["body"]).items()}
 
     def kill_thread(self, thread_id):
         killed_threads = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id),
@@ -706,13 +705,17 @@ class FEC:
 
             stop = False
 
-            address = "tcp://" + general['control_ip'] + ":5555"
-            self.zero_conn.connect(address)
-            self.zeromq_subscribe_thread.daemon = True
-            self.zeromq_subscribe_thread.start()
-
             host = general['control_ip']
             port = int(general['control_port'])
+            zero_port = general['zeromq_port']
+
+            self.zero_conn = self.context.socket(zmq.SUB)
+            address = "tcp://" + host + ":" + zero_port
+            self.zero_conn.connect(address)
+            self.zero_conn.subscribe("")
+
+            self.zeromq_subscribe_thread.daemon = True
+            self.zeromq_subscribe_thread.start()
 
             self.control_socket.connect((host, port))
 
@@ -779,6 +782,8 @@ class FEC:
         except KeyboardInterrupt:
             logger.warning("[!] Stopping... (Dont worry if you get errors)")
             stop = True
+            self.zero_conn.close()
+            self.context.term()
             self.kill_thread(self.zeromq_subscribe_thread.ident)
             self.zeromq_subscribe_thread.join()
             self.kill_thread(self.update_prometheus_thread.ident)
@@ -786,8 +791,6 @@ class FEC:
             if resources_if == 'Y' or resources_if == 'y':
                 self.kill_thread(self.bw_thread.ident)
                 self.bw_thread.join()
-            self.zero_conn.close()
-            self.context.term()
             self.control_socket.close()
             for connection in self.connections.values():
                 connection['sock'].close()
