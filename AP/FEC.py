@@ -12,11 +12,11 @@ import json
 import ctypes
 import sys
 import logging
-import pika
 import copy
 from typing import Optional
 from config import FECS_RANGE
 from prometheus_client import start_http_server, Gauge
+import zmq
 
 
 def get_next_hop_fec(cav_trajectory) -> Optional[int]:
@@ -38,7 +38,7 @@ def get_next_hop_fec(cav_trajectory) -> Optional[int]:
 
 
 class FEC:
-    def __init__(self, gpu, ram, bw, access_point, rabbit_conn, locations):
+    def __init__(self, gpu, ram, bw, access_point, locations):
         self.id = None
         self.ip = None
         self.current_state = {"gpu": gpu, "ram": ram, "bw": bw, "connected_users": []}
@@ -47,8 +47,9 @@ class FEC:
         self.fec_list = dict()
         self.vnf_list = dict()
         self.access_point = access_point
-        self.rabbit_conn = rabbit_conn
-        self.rabbitmq_subscribe_thread = threading.Thread(target=self.subscribe, args=(self.rabbit_conn, 'fec vnf'))
+        self.context = zmq.Context()
+        self.zero_conn = self.context.socket(zmq.SUB)
+        self.zeromq_subscribe_thread = threading.Thread(target=self.subscribe)
         self.update_prometheus_thread = threading.Thread(target=self.update_prometheus, args=(general['resources_if']))
         self.bw_thread = threading.Thread(target=self.network_usage)
         self.locations = locations
@@ -619,35 +620,21 @@ class FEC:
         if response['res'] != 200:
             logger.error('[!] Error from Control when sending FEC message:' + str(response['res']))
 
-    def subscribe(self, conn, key_string):
-        channel = conn.channel()
-
-        channel.exchange_declare(exchange=general['control_exchange_name'], exchange_type='direct')
-
-        queue = channel.queue_declare(queue='', exclusive=True).method.queue
-
-        keys = key_string.split(' ')
-        for key in keys:
-            channel.queue_bind(
-                exchange=general['control_exchange_name'], queue=queue, routing_key=key)
-
+    def subscribe(self):
         logger.info('[I] Waiting for published data...')
+        while not stop:
+            message = self.zero_conn.recv_string()
+            topic, msg_json = message.split(' ', 1)
+            logger.debug("[D] Received message. Key: " + str(topic) + ". Message: " + msg_json)
 
-        def callback(ch, method, properties, body):
-            logger.debug("[D] Received message. Key: " + str(method.routing_key) + ". Message: " + body.decode("utf-8"))
-            if str(method.routing_key) == 'fec':
+            if str(topic) == 'fec':
                 if self.start_time is not None:
                     end_time = time.time()
                     self.rabbit_metric.set((end_time-self.start_time)*1000)
                     self.start_time = None
-                self.fec_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
-            elif str(method.routing_key) == 'vnf':
-                self.vnf_list = {int(k): v for k, v in json.loads(body.decode('utf-8')).items()}
-
-        channel.basic_consume(
-            queue=queue, on_message_callback=callback, auto_ack=True)
-
-        channel.start_consuming()
+                self.fec_list = {int(k): v for k, v in json.loads(msg_json).items()}
+            elif str(topic) == 'vnf':
+                self.vnf_list = {int(k): v for k, v in json.loads(msg_json).items()}
 
     def kill_thread(self, thread_id):
         killed_threads = ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(thread_id),
@@ -719,8 +706,10 @@ class FEC:
 
             stop = False
 
-            self.rabbitmq_subscribe_thread.daemon = True
-            self.rabbitmq_subscribe_thread.start()
+            address = "tcp://" + general['control_ip'] + ":5555"
+            self.zero_conn.connect(address)
+            self.zeromq_subscribe_thread.daemon = True
+            self.zeromq_subscribe_thread.start()
 
             host = general['control_ip']
             port = int(general['control_port'])
@@ -790,14 +779,15 @@ class FEC:
         except KeyboardInterrupt:
             logger.warning("[!] Stopping... (Dont worry if you get errors)")
             stop = True
-            self.kill_thread(self.rabbitmq_subscribe_thread.ident)
-            self.rabbitmq_subscribe_thread.join()
+            self.kill_thread(self.zeromq_subscribe_thread.ident)
+            self.zeromq_subscribe_thread.join()
             self.kill_thread(self.update_prometheus_thread.ident)
             self.update_prometheus_thread.join()
             if resources_if == 'Y' or resources_if == 'y':
                 self.kill_thread(self.bw_thread.ident)
                 self.bw_thread.join()
-            self.rabbit_conn.close()
+            self.zero_conn.close()
+            self.context.term()
             self.control_socket.close()
             for connection in self.connections.values():
                 connection['sock'].close()
@@ -874,10 +864,9 @@ class FEC:
 
 if __name__ == '__main__':
     config = configparser.ConfigParser()
-    config.read("fec_annex.ini")
+    config.read("fec_indoor.ini")
     general = config['general']
     locations = config['general']
-
     logger = logging.getLogger('')
     logger.setLevel(int(general['log_level']))
     logger.addHandler(logging.FileHandler(general['log_file_name'], mode='w', encoding='utf-8'))
@@ -919,12 +908,6 @@ if __name__ == '__main__':
         my_fec = FEC(16, 32, 64, pyaccesspoint.AccessPoint(wlan=general['wlan_if_name'], ssid=general['wlan_ssid_name'],
                                                            password=general['wlan_password'], ip=general['wlan_ap_ip'],
                                                            netmask=general['wlan_netmask'],
-                                                           inet=general['eth_if_name']), pika.BlockingConnection(
-            pika.ConnectionParameters(host=general['control_ip'], port=int(general['rabbit_port']),
-                                      credentials=pika.PlainCredentials(general['control_username'],
-                                                                        general['control_password']))), locations)
+                                                           inet=general['eth_if_name']), locations)
     else:
-        my_fec = FEC(16, 32, 64, None, pika.BlockingConnection(
-            pika.ConnectionParameters(host=general['control_ip'], port=int(general['rabbit_port']),
-                                      credentials=pika.PlainCredentials(general['control_username'],
-                                                                        general['control_password']))), locations)
+        my_fec = FEC(16, 32, 64, None, locations)
