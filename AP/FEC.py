@@ -615,7 +615,6 @@ class FEC:
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
-        print("I've sent a FEC message")
         self.start_time = time.time()
         self.control_socket.send(json.dumps(dict(type="fec", data=self.current_state)).encode())
         response = json.loads(self.control_socket.recv(1024).decode())
