@@ -19,8 +19,13 @@ driver=nl80211
 ssid={0}
 #sets the mode of wifi, depends upon the devices you will be using. It can be a,b,g,n. Setting to g ensures backward compatiblity.
 hw_mode=g
+ieee80211n=1
+ieee80211d=1
+country_code=ES
+ht_capab=[HT40+][SHORT-GI-20][SHORT-GI-40]
+
 #sets the channel for your wifi
-channel=6
+channel=1
 #macaddr_acl sets options for mac address filtering. 0 means "accept unless in deny list"
 macaddr_acl=0
 #setting ignore_broadcast_ssid to 1 will disable the broadcasting of ssid
@@ -34,13 +39,11 @@ auth_algs=1
 #1 - wpa only
 #2 - wpa2 only
 #3 - both
-wpa=3
+wpa=2
 #sets wpa passphrase required by the clients to authenticate themselves on the network
 wpa_passphrase={1}
 #sets wpa key management
 wpa_key_mgmt=WPA-PSK
-#sets encryption used by WPA
-wpa_pairwise=TKIP
 #sets encryption used by WPA2
 rsn_pairwise=CCMP
 #################################

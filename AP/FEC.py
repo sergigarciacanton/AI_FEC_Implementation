@@ -15,7 +15,7 @@ import logging
 import copy
 from typing import Optional
 from config import FECS_RANGE
-from prometheus_client import start_http_server, Gauge
+from prometheus_client import start_http_server, Gauge, Histogram
 import zmq
 
 
@@ -58,6 +58,7 @@ class FEC:
         self.gpu_metric = None
         self.bw_metric = None
         self.rabbit_metric = Gauge('Rabbit_time', 'Time elapsed until all FECs receive message')
+        self.rabbit_histogram = Histogram('hist_rabbit', 'An histogram test', buckets=[1.0,2.0,3.0,4.0,5.0,6.0])
         self.start_time = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
 
@@ -614,6 +615,7 @@ class FEC:
 
     def send_fec_message(self):
         logger.info('[I] New current FEC state! Sending to control...')
+        print("I've sent a FEC message")
         self.start_time = time.time()
         self.control_socket.send(json.dumps(dict(type="fec", data=self.current_state)).encode())
         response = json.loads(self.control_socket.recv(1024).decode())
@@ -632,8 +634,11 @@ class FEC:
             if str(message["key"]) == 'fec':
                 if self.start_time is not None:
                     end_time = time.time()
-                    self.rabbit_metric.set((end_time-self.start_time)*1000)
+                    t_elapsed = (end_time-self.start_time)*1000
+                    self.rabbit_metric.set(t_elapsed)
+                    self.rabbit_histogram.observe(t_elapsed)
                     self.start_time = None
+
                 self.fec_list = {int(k): v for k, v in json.loads(message["body"]).items()}
             elif str(message["key"]) == 'vnf':
                 self.vnf_list = {int(k): v for k, v in json.loads(message["body"]).items()}
