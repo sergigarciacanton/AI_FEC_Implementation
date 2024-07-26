@@ -763,7 +763,7 @@ class FEC:
                 try:
                     with open("rabbit_latency.txt", 'r') as file:
                         lines = file.readlines()
-                        for line in lines:
+                        for line in lines[:-1]:
                             self.rabbit_histogram.observe(float(line.strip()))
                 except FileNotFoundError:
                     print(logger.error("The latency log file does not exist"))
