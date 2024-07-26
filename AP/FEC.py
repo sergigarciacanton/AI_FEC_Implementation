@@ -637,6 +637,8 @@ class FEC:
                     self.rabbit_metric.set(t_elapsed)
                     self.rabbit_histogram.observe(t_elapsed)
                     self.start_time = None
+                    with open("rabbit_latency.txt", 'a') as file:
+                        file.write(f"{t_elapsed}\n")
 
                 self.fec_list = {int(k): v for k, v in json.loads(message["body"]).items()}
             elif str(message["key"]) == 'vnf':
@@ -756,6 +758,16 @@ class FEC:
 
             self.update_prometheus_thread.daemon = True
             self.update_prometheus_thread.start()
+
+            if general['load_latency_if'] == 'y' or general['load_latency_if'] == "Y":
+                try:
+                    with open("rabbit_latency.txt", 'r') as file:
+                        lines = file.readlines()
+                        for line in lines:
+                            self.rabbit_histogram.observe(float(line.strip()))
+                except FileNotFoundError:
+                    print(logger.error("The latency log file does not exist"))
+
 
             if general['agent_if'] == 'y' or general['agent_if'] == 'Y':
                 agent_conn_thread = threading.Thread(target=self.agent_conn)
