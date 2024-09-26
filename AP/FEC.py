@@ -58,7 +58,7 @@ class FEC:
         self.gpu_metric = None
         self.bw_metric = None
         self.rabbit_metric = Gauge('Rabbit_time', 'Time elapsed until all FECs receive message')
-        self.rabbit_histogram = Histogram('hist_rabbit', 'An histogram test', buckets=[1.0,2.0,3.0,4.0,5.0,6.0])
+        self.rabbit_histogram = Histogram('hist_rabbit', 'Histogram of prop time', buckets=[1.0,2.0,3.0,4.0,5.0,6.0])
         self.start_time = None
         self.run_fec(general['wireshark_if'], general['tshark_if'], general['resources_if'])
 
